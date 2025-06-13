@@ -1,0 +1,29 @@
+# WeChat Mini Game specific
+node_modules/
+miniprogram_npm/
+dist/
+build/
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Project specific
+project.private.config.json 
