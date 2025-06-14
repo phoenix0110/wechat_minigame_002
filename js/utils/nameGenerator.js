@@ -101,3 +101,23 @@ export function generateClerkResume(clerkType) {
     clerkType
   };
 } 
+
+
+/**
+ * 生成随机进货员简历
+ */
+export function generateDesignerResume() {
+  const name = generateRandomChineseName();
+  const age = generateRandomAge();
+  const icon = EMPLOYEE_ICONS[Math.floor(Math.random() * EMPLOYEE_ICONS.length)];
+  
+  // 根据设计师类型生成不同的能力范围
+  let sssLevelBonus = Math.floor(Math.random() * 3) + 1; // 1-3% 
+  
+  return {
+    name,
+    age,
+    icon,
+    sssLevelBonus
+  };
+} 

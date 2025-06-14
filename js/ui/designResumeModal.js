@@ -1,11 +1,11 @@
-import { generateClerkResume } from '../utils/nameGenerator.js';
+import { generateDesignerResume } from '../utils/nameGenerator.js';
 import { formatPrice } from '../config/luxuryConfig.js';
 import { EmployeeStatsGenerator } from '../config/employeeStats.js';
 
 /**
  * 进货员简历弹窗
  */
-export default class ClerkResumeModal {
+export default class DesignResumeModal {
   constructor() {
     this.isVisible = false;
     this.modalWidth = 300;
@@ -13,16 +13,14 @@ export default class ClerkResumeModal {
     this.modalX = 0;
     this.modalY = 0;
     this.currentResume = null;
-    this.clerkType = 1;
     this.basePrice = 0;
   }
 
   /**
    * 显示简历弹窗
    */
-  show(canvasWidth, canvasHeight, clerkType, basePrice) {
+  show(canvasWidth, canvasHeight, basePrice) {
     this.isVisible = true;
-    this.clerkType = clerkType;
     this.basePrice = basePrice;
     
     // 居中显示弹窗
@@ -39,7 +37,6 @@ export default class ClerkResumeModal {
   hide() {
     this.isVisible = false;
     this.currentResume = null;
-    this.clerkType = 1;
     this.basePrice = 0;
   }
 
@@ -47,10 +44,10 @@ export default class ClerkResumeModal {
    * 生成新简历
    */
   generateNewResume() {
-    const baseResume = generateClerkResume(this.clerkType);
+    const baseResume = generateDesignerResume();
     
     // 生成完整的员工对象（包含评级和薪资）
-    const completeEmployee = EmployeeStatsGenerator.generateCompleteEmployee(false, baseResume);
+    const completeEmployee = EmployeeStatsGenerator.generateCompleteEmployee(true, baseResume);
     
     // 更新基础价格为实际薪资
     this.basePrice = completeEmployee.salary;
@@ -123,7 +120,7 @@ export default class ClerkResumeModal {
     ctx.fillStyle = '#2C3E50';
     ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('📋 进货员简历', this.modalX + this.modalWidth / 2, this.modalY + 30);
+    ctx.fillText('📋 设计师简历', this.modalX + this.modalWidth / 2, this.modalY + 30);
 
     // 绘制关闭按钮
     ctx.fillStyle = '#E74C3C';
@@ -186,22 +183,13 @@ export default class ClerkResumeModal {
     currentY += lineHeight + 5;
 
     // 显示实际的员工能力
-    if (this.currentResume.abilities && this.currentResume.abilities.length > 0) {
-      this.currentResume.abilities.forEach(ability => {
-        const color = EmployeeStatsGenerator.getAbilityColor(ability);
-        const isGold = color === '#FFD700';
-        ctx.fillStyle = color;
-        ctx.font = isGold ? 'bold 14px Arial' : '14px Arial';
-        const description = EmployeeStatsGenerator.getAbilityDescription(ability);
-        ctx.fillText(`• ${description}`, contentX + 10, currentY);
-        currentY += lineHeight;
-      });
-    } else {
-      ctx.fillStyle = '#7F8C8D';
-      ctx.font = '14px Arial';
-      ctx.fillText('• 暂无特殊能力', contentX + 10, currentY);
-      currentY += lineHeight;
-    }
+    const color = EmployeeStatsGenerator.getAbilityColor(this.currentResume.abilities[0]);
+    const isGold = color === '#FFD700';
+    ctx.fillStyle = color;
+    ctx.font = isGold ? 'bold 14px Arial' : '14px Arial';
+    const description = EmployeeStatsGenerator.getAbilityDescription(this.currentResume.abilities[0]);
+    ctx.fillText(`• ${description}`, contentX + 10, currentY);
+    currentY += lineHeight;
     
     currentY += 10;
 

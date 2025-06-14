@@ -33,7 +33,7 @@ export const GRADE_BOOST_CONFIG = {
   weights: [16.67, 33.34, 50.01, 66.68, 83.35, 100] // 累积概率用于随机选择
 };
 
-// S级专用配置，最大值为20%
+// S级和SSS专用配置，最大值为20%
 export const S_GRADE_BOOST_CONFIG = {
   values: [1, 2, 3, 4, 5, 20],
   probabilities: [16.67, 16.67, 16.67, 16.67, 16.67, 16.65], // 总和100%
@@ -135,13 +135,10 @@ export class EmployeeStatsGenerator {
   /**
    * 生成设计师数值
    */
-  static generateDesignerStats() {
-    // 设计师专门提升SSS级产品概率
-    const sssBoost = this.getRandomValueByWeight(GRADE_BOOST_CONFIG);
-    
+  static generateDesignerStats() {   
     return [{
       type: DESIGNER_ABILITY_TYPES.SSS_GRADE_BOOST,
-      value: sssBoost
+      value: this.getRandomValueByWeight(S_GRADE_BOOST_CONFIG)
     }];
   }
 
@@ -221,15 +218,34 @@ export class EmployeeStatsGenerator {
   static getAbilityColor(ability) {
     switch (ability.type) {
       case CLERK_ABILITY_TYPES.SPEED_REDUCTION:
-        return '#00BFFF'; // 蓝色 - 速度
+        if (ability.value === -20) {
+          return '#FFD700'; // 金色 - 最高速度加成
+        } else if (ability.value === -10) {
+          return '#00FF00'; // 绿色 - 中等速度加成
+        }
+        return '#7F8C8D'; // 灰色 - 其他速度加成
       case CLERK_ABILITY_TYPES.A_GRADE_BOOST:
-        return '#00FF00'; // 绿色 - A级
+        if (ability.value === 10) {
+          return '#FFD700'; // 金色 - 最高A级加成
+        } else if (ability.value === 5) {
+          return '#00FF00'; // 绿色 - 中等A级加成
+        }
+        return '#7F8C8D'; // 灰色 - 其他A级加成
       case CLERK_ABILITY_TYPES.S_GRADE_BOOST:
-        return '#C0C0C0'; // 银色 - S级
+        if (ability.value === 20) {
+          return '#FFD700'; // 金色 - 最高S级加成
+        } else if (ability.value === 10) {
+          return '#00FF00'; // 绿色 - 中等S级加成
+        }
+        return '#7F8C8D'; // 灰色 - 其他S级加成
       case DESIGNER_ABILITY_TYPES.SSS_GRADE_BOOST:
-        return '#FFD700'; // 金色 - SSS级
+        if (ability.value === 20) {
+          return '#FFD700'; // 金色 - 最高SSS级加成
+        } else if (ability.value === 5) {
+          return '#00FF00'; // 绿色 - 中等SSS级加成
+        }
       default:
-        return '#FFFFFF'; // 白色 - 默认
+        return '#7F8C8D'; // 灰色 - 默认
     }
   }
 

@@ -4,24 +4,24 @@ import { EmployeeStatsGenerator } from '../config/employeeStats.js';
 /**
  * 进货员信息查看弹窗
  */
-export default class ClerkInfoModal {
+export default class DesignerInfoModal {
   constructor() {
     this.isVisible = false;
     this.modalWidth = 300;
     this.modalHeight = 420;
     this.modalX = 0;
     this.modalY = 0;
-    this.currentClerk = null;
-    this.clerkSlot = -1;
+    this.currentDesigner = null;
+    this.designerSlot = -1;
   }
 
   /**
    * 显示进货员信息弹窗
    */
-  show(canvasWidth, canvasHeight, clerk, slotIndex) {
+  show(canvasWidth, canvasHeight, designer, slotIndex) {
     this.isVisible = true;
-    this.currentClerk = clerk;
-    this.clerkSlot = slotIndex;
+    this.currentDesigner = designer;
+    this.designerSlot = slotIndex;
     
     // 居中显示弹窗
     this.modalX = (canvasWidth - this.modalWidth) / 2;
@@ -33,8 +33,8 @@ export default class ClerkInfoModal {
    */
   hide() {
     this.isVisible = false;
-    this.currentClerk = null;
-    this.clerkSlot = -1;
+    this.currentDesigner = null;
+    this.designerSlot = -1;
   }
 
   /**
@@ -60,7 +60,7 @@ export default class ClerkInfoModal {
     
     if (x >= fireButtonX && x <= fireButtonX + fireButtonW &&
         y >= fireButtonY && y <= fireButtonY + fireButtonH) {
-      return { type: 'fire', clerkSlot: this.clerkSlot };
+      return { type: 'fire', designerSlot: this.designerSlot };
     }
 
     return null;
@@ -70,7 +70,7 @@ export default class ClerkInfoModal {
    * 渲染弹窗
    */
   render(ctx) {
-    if (!this.isVisible || !this.currentClerk) return;
+    if (!this.isVisible || !this.currentDesigner) return;
 
     ctx.save();
 
@@ -89,7 +89,7 @@ export default class ClerkInfoModal {
     ctx.fillStyle = '#2C3E50';
     ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('👨‍💼 进货员信息', this.modalX + this.modalWidth / 2, this.modalY + 30);
+    ctx.fillText('👨‍💼 设计师信息', this.modalX + this.modalWidth / 2, this.modalY + 30);
 
     // 绘制关闭按钮
     ctx.fillStyle = '#E74C3C';
@@ -99,8 +99,8 @@ export default class ClerkInfoModal {
     ctx.textAlign = 'center';
     ctx.fillText('×', this.modalX + this.modalWidth - 20, this.modalY + 23);
 
-    // 绘制进货员信息
-    this.renderClerkInfo(ctx);
+    // 绘制设计师信息
+    this.renderDesignerInfo(ctx);
 
     // 绘制解雇按钮
     this.renderFireButton(ctx);
@@ -109,9 +109,9 @@ export default class ClerkInfoModal {
   }
 
   /**
-   * 渲染进货员信息
+   * 渲染设计师信息
    */
-  renderClerkInfo(ctx) {
+  renderDesignerInfo(ctx) {
     const contentX = this.modalX + 20;
     let currentY = this.modalY + 60;
     const lineHeight = 25;
@@ -124,7 +124,7 @@ export default class ClerkInfoModal {
     ctx.fillText('姓名：', contentX, currentY);
     ctx.fillStyle = '#3498DB';
     ctx.font = 'bold 16px Arial';
-    ctx.fillText(this.currentClerk.name, contentX + 50, currentY);
+    ctx.fillText(this.currentDesigner.name, contentX + 50, currentY);
     currentY += lineHeight;
 
     // 年龄
@@ -133,16 +133,16 @@ export default class ClerkInfoModal {
     ctx.fillText('年龄：', contentX, currentY);
     ctx.fillStyle = '#3498DB';
     ctx.font = 'bold 16px Arial';
-    ctx.fillText(`${this.currentClerk.age}岁`, contentX + 50, currentY);
+    ctx.fillText(`${this.currentDesigner.age}岁`, contentX + 50, currentY);
     currentY += lineHeight + 10;
 
     // 评级
     ctx.fillStyle = '#2C3E50';
     ctx.font = 'bold 16px Arial';
     ctx.fillText('评级：', contentX, currentY);
-    ctx.fillStyle = EmployeeStatsGenerator.getRatingColor(this.currentClerk.rating);
+    ctx.fillStyle = EmployeeStatsGenerator.getRatingColor(this.currentDesigner.rating);
     ctx.font = 'bold 16px Arial';
-    ctx.fillText(this.currentClerk.rating || '普通员工', contentX + 50, currentY);
+    ctx.fillText(this.currentDesigner.rating || '普通员工', contentX + 50, currentY);
     currentY += lineHeight;
 
     // 工作状态
@@ -160,7 +160,7 @@ export default class ClerkInfoModal {
     ctx.fillText('薪资：', contentX, currentY);
     ctx.fillStyle = '#3498DB';
     ctx.font = 'bold 16px Arial';
-    ctx.fillText(formatPrice(Math.floor(this.currentClerk.salary || 100000)), contentX + 50, currentY);
+    ctx.fillText(formatPrice(Math.floor(this.currentDesigner.salary || 100000)), contentX + 50, currentY);
     currentY += lineHeight + 10;
 
     // 能力项标题
@@ -169,16 +169,13 @@ export default class ClerkInfoModal {
     ctx.fillText('专业能力：', contentX, currentY);
     currentY += lineHeight + 5;
 
-
-    this.currentClerk.abilities.forEach(ability => {
-      const color = EmployeeStatsGenerator.getAbilityColor(ability);
-      const isGold = color === '#FFD700';
-      ctx.fillStyle = color;
-      ctx.font = isGold ? 'bold 14px Arial' : '14px Arial';
-      const description = EmployeeStatsGenerator.getAbilityDescription(ability);
-      ctx.fillText(`• ${description}`, contentX + 10, currentY);
-      currentY += lineHeight;
-    });
+    const color = EmployeeStatsGenerator.getAbilityColor(this.currentDesigner.abilities[0]);
+    const isGold = color === '#FFD700';
+    ctx.fillStyle = color;
+    ctx.font = isGold ? 'bold 14px Arial' : '14px Arial';
+    const description = EmployeeStatsGenerator.getAbilityDescription(this.currentDesigner.abilities[0]);
+    ctx.fillText(`• ${description}`, contentX + 10, currentY);
+    currentY += lineHeight;
     }
  
 

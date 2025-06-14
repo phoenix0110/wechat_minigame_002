@@ -157,10 +157,16 @@ export default class StoreInfoModal {
     ctx.font = '16px Arial';
     ctx.textAlign = 'left';
 
+    // 获取员工评级统计
+    const employeeStats = this.getEmployeeRatingStats();
+    
     // 店铺等级
-    const totalEmployees = this.storeData.hiredClerks.filter(c => c !== null).length;
-    const hasDesigner = this.storeData.hiredDesigners && this.storeData.hiredDesigners.some(d => d !== null);
-    const storeLevel = getStoreLevel(totalEmployees, hasDesigner);
+    const stats = this.storeData.productStats || { B: 0, A: 0, S: 0, SSS: 0 };
+    const storeLevel = getStoreLevel(
+      stats.SSS || 0,
+      employeeStats['万里挑一'] || 0,
+      employeeStats['天纵奇才'] || 0
+    );
     
     ctx.fillStyle = '#3498db';
     ctx.font = 'bold 18px Arial';
@@ -171,7 +177,6 @@ export default class StoreInfoModal {
     ctx.font = 'bold 16px Arial';
     ctx.fillText('商品统计:', leftMargin, contentStartY + lineHeight * 1.5);
 
-    const stats = this.storeData.productStats;
     const statY = contentStartY + lineHeight * 2.5;
     
     // B级商品
@@ -195,23 +200,22 @@ export default class StoreInfoModal {
     ctx.font = 'bold 16px Arial';
     ctx.fillText('员工统计:', leftMargin, statY + lineHeight * 4.5);
 
-    const employeeStats = this.getEmployeeRatingStats();
     const employeeStatY = statY + lineHeight * 5.5;
     
     // 天纵奇才
-    ctx.fillStyle = '#FF6B35';
-    ctx.fillText(`天纵奇才: ${employeeStats['天纵奇才']} 人`, leftMargin + 20, employeeStatY);
+    ctx.fillStyle = '#FF1493';
+    ctx.fillText(`天纵奇才: ${employeeStats['天纵奇才'] || 0} 人`, leftMargin + 20, employeeStatY);
     
     // 万里挑一
-    ctx.fillStyle = '#9B59B6';
-    ctx.fillText(`万里挑一: ${employeeStats['万里挑一']} 人`, leftMargin + 20, employeeStatY + lineHeight);
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText(`万里挑一: ${employeeStats['万里挑一'] || 0} 人`, leftMargin + 20, employeeStatY + lineHeight);
     
     // 人中龙凤
-    ctx.fillStyle = '#3498DB';
-    ctx.fillText(`人中龙凤: ${employeeStats['人中龙凤']} 人`, leftMargin + 20, employeeStatY + lineHeight * 2);
+    ctx.fillStyle = '#4169E1';
+    ctx.fillText(`人中龙凤: ${employeeStats['人中龙凤'] || 0} 人`, leftMargin + 20, employeeStatY + lineHeight * 2);
     
     // 普通员工
-    ctx.fillStyle = '#95A5A6';
-    ctx.fillText(`普通员工: ${employeeStats['普通员工']} 人`, leftMargin + 20, employeeStatY + lineHeight * 3);
+    ctx.fillStyle = '#8B4513';
+    ctx.fillText(`普通员工: ${employeeStats['普通员工'] || 0} 人`, leftMargin + 20, employeeStatY + lineHeight * 3);
   }
 } 

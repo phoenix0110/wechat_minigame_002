@@ -2,20 +2,9 @@ import {
   LUXURY_ITEMS, 
   STOCK_CLERKS,
   DESIGNER,
-  formatPrice, 
-  formatTime,
-  isItemOnCooldown, 
-  getRemainingCooldown, 
-  setItemCooldown,
-  getStockClerkById,
-  applySpeedBonus,
-  getStoreLevel,
-  getGradeStats,
   calculateRefreshProbabilities,
-  calculateRefreshSpeedBonus,
-  updateProductSlots
+  calculateRefreshSpeedBonus
 } from '../config/luxuryConfig.js';
-import { EmployeeStatsGenerator } from '../config/employeeStats.js';
 import StoreInfoModal from './storeInfoModal.js';
 
 /**
@@ -31,8 +20,8 @@ export default class LuxuryStorePage {
     this.slotWidth = 85; // 商品栏位大小，放大图标
     this.slotHeight = 85;
     this.slotSpacing = 5; // 栏位间距
-          this.hiredClerks = [null, null, null]; // 3个位置的进货员
-      this.hiredDesigners = [null, null, null]; // 3个设计师位置
+    this.hiredClerks = [null, null, null]; // 3个位置的进货员
+    this.hiredDesigners = [null, null, null]; // 3个设计师位置
     this.goodsImages = {}; // 商品图片缓存
     this.backgroundImage = null; // 背景图片
     this.productSlots = []; // 21个商品位置
@@ -40,6 +29,11 @@ export default class LuxuryStorePage {
     this.loadGoodsImages(); // 加载商品图片
     this.loadBackgroundImage(); // 加载背景图片
     this.initializeSlots(); // 初始化商品位置
+    
+    // 获取画布尺寸
+    const canvas = wx.createCanvas();
+    this.canvasWidth = canvas.width;
+    this.canvasHeight = canvas.height;
   }
 
   /**
@@ -66,7 +60,7 @@ export default class LuxuryStorePage {
     }
     
     // 后9个位置为空
-    for (let i = 12; i < 21; i++) {
+    for (let i = 12; i < 18; i++) {
       this.productSlots.push({
         id: i,
         hasProduct: false,
@@ -220,8 +214,96 @@ export default class LuxuryStorePage {
    */
   fireDesigner(slotIndex) {
     if (slotIndex >= 0 && slotIndex < 3) {
-      this.hiredDesigners[slotIndex] = null;
+      const designer = this.hiredDesigners[slotIndex];
+      if (designer) {
+        this.hiredDesigners[slotIndex] = null;
+      }
     }
+  }
+
+  /**
+   * 生成设计师简历
+   */
+  generateDesignerResume() {
+    const name = this.generateRandomName();
+    const age = Math.floor(Math.random() * 20) + 20; // 20-40岁
+    const abilities = this.generateDesignerAbilities();
+    
+    return {
+      name,
+      age,
+      abilities,
+      rating: this.generateRandomRating(), // 添加评级
+      salary: this.calculateDesignerSalary(abilities) // 添加薪资
+    };
+  }
+
+  /**
+   * 生成设计师能力
+   */
+  generateDesignerAbilities() {
+    const abilities = [];
+    
+    // 随机生成1-3个能力
+    const abilityCount = Math.floor(Math.random() * 3) + 1;
+    
+    for (let i = 0; i < abilityCount; i++) {
+      const abilityType = Math.random() < 0.2 ? 'SSS_GRADE_BOOST' : 'NORMAL';
+      const abilityValue = abilityType === 'SSS_GRADE_BOOST' ? 
+        Math.floor(Math.random() * 10) + 1 : // 1-10%
+        Math.floor(Math.random() * 5) + 1;   // 1-5%
+      
+      abilities.push({
+        type: abilityType,
+        name: abilityType === 'SSS_GRADE_BOOST' ? 'SSS级产品提升' : '普通提升',
+        value: abilityValue
+      });
+    }
+    
+    return abilities;
+  }
+
+  /**
+   * 计算设计师薪资
+   */
+  calculateDesignerSalary(abilities) {
+    let baseSalary = 5000;
+    abilities.forEach(ability => {
+      if (ability.type === 'SSS_GRADE_BOOST') {
+        baseSalary += ability.value * 1000;
+      } else {
+        baseSalary += ability.value * 500;
+      }
+    });
+    return baseSalary;
+  }
+
+  /**
+   * 生成随机评级
+   */
+  generateRandomRating() {
+    const ratings = ['C', 'B', 'A', 'S', 'SS', 'SSS'];
+    const weights = [30, 25, 20, 15, 7, 3]; // 各评级的权重
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let random = Math.random() * totalWeight;
+    
+    for (let i = 0; i < weights.length; i++) {
+      if (random < weights[i]) {
+        return ratings[i];
+      }
+      random -= weights[i];
+    }
+    
+    return ratings[0]; // 默认返回C级
+  }
+
+  /**
+   * 刷新设计师简历
+   */
+  refreshDesignerResume() {
+    const newResume = this.generateDesignerResume();
+    this.currentDesignerResume = newResume;
+    this.messageSystem.addMessage('刷新了设计师简历');
   }
 
   /**
@@ -291,6 +373,13 @@ export default class LuxuryStorePage {
     
     if (x >= storeInfoButtonX && x <= storeInfoButtonX + storeInfoButtonWidth &&
         y >= storeInfoButtonY && y <= storeInfoButtonY + storeInfoButtonHeight) {
+      // 准备店铺数据
+      const storeData = {
+        hiredClerks: [...this.hiredClerks], // 创建副本以确保数据最新
+        hiredDesigners: [...this.hiredDesigners], // 创建副本以确保数据最新
+        productStats: this.getProductStats() // 获取最新的商品统计
+      };
+      this.storeInfoModal.show(this.canvasWidth, this.canvasHeight, storeData);
       return { type: 'store_info' };
     }
 
@@ -527,7 +616,7 @@ export default class LuxuryStorePage {
     const slotsStartX = 30; // 左移给右侧员工区域留空间
     const slotsStartY = 180; // 整体下移
     
-    for (let i = 0; i < 21; i++) {
+    for (let i = 0; i < 18; i++) {  // 修改为18个格子
       const row = Math.floor(i / this.slotsPerRow);
       const col = i % this.slotsPerRow;
       const slotX = slotsStartX + col * (this.slotWidth + this.slotSpacing);

@@ -19,8 +19,8 @@ export const PRODUCT_GRADES = {
  * 商品刷新配置
  */
 export const REFRESH_CONFIG = {
-  TOTAL_SLOTS: 21,           // 总共21个商品位置
-  EMPTY_SLOTS: 9,            // 9个空位置
+  TOTAL_SLOTS: 18,           // 总共18个商品位置
+  EMPTY_SLOTS: 6,            // 6个空位置
   AVAILABLE_SLOTS: 12,       // 12个可用位置
   REFRESH_TIME: 60000,       // 刷新时间1分钟（毫秒）
   COOLDOWN_TIME: 60000       // 冷却时间1分钟（毫秒）
@@ -36,7 +36,7 @@ export const SKILL_TYPES = {
 
 export const LUXURY_ITEMS = [
   // 包包类 (6款)
-  { id: 1, name: '经典款手提包', type: 'bag', baseGrade: 'SSS', icon: 'images/image_goods_1.png', basePrice: 80000000, cooldown: 0 },
+  { id: 1, name: '经典款手提包', type: 'bag', baseGrade: 'S', icon: 'images/image_goods_1.png', basePrice: 80000000, cooldown: 0 },
   { id: 2, name: '链条斜挎包', type: 'bag', baseGrade: 'S', icon: 'images/image_goods_2.png', basePrice: 45000000, cooldown: 0 },
   { id: 3, name: '时尚手提包', type: 'bag', baseGrade: 'A', icon: 'images/image_goods_3.png', basePrice: 25000000, cooldown: 0 },
   { id: 4, name: '马鞍型手包', type: 'bag', baseGrade: 'A', icon: 'images/image_goods_4.png', basePrice: 35000000, cooldown: 0 },
@@ -388,14 +388,71 @@ export function formatTime(seconds) {
 }
 
 /**
- * 计算店铺等级
+ * 店铺等级历史记录
  */
-export function getStoreLevel(totalEmployees, hasDesigner) {
+const storeLevelHistory = {
+  maxSSSProducts: 0,    // 历史上最大的SSS级商品数量
+  maxWanliEmployees: 0, // 历史上最大的万里挑一员工数量
+  maxTianzongEmployees: 0 // 历史上最大的天纵奇才员工数量
+};
+
+/**
+ * 更新店铺等级历史记录
+ */
+export function updateStoreLevelHistory(currentSSSProducts, currentWanliEmployees, currentTianzongEmployees) {
+  // 更新SSS级商品历史记录
+  if (currentSSSProducts > storeLevelHistory.maxSSSProducts) {
+    storeLevelHistory.maxSSSProducts = currentSSSProducts;
+  }
+  
+  // 更新万里挑一员工历史记录
+  if (currentWanliEmployees > storeLevelHistory.maxWanliEmployees) {
+    storeLevelHistory.maxWanliEmployees = currentWanliEmployees;
+  }
+  
+  // 更新天纵奇才员工历史记录
+  if (currentTianzongEmployees > storeLevelHistory.maxTianzongEmployees) {
+    storeLevelHistory.maxTianzongEmployees = currentTianzongEmployees;
+  }
+}
+
+/**
+ * 获取店铺等级历史记录
+ */
+export function getStoreLevelHistory() {
+  return { ...storeLevelHistory };
+}
+
+/**
+ * 计算店铺等级
+ * 规则：
+ * 1. 初始等级为1级
+ * 2. 当SSS级商品数量超过历史最大时，等级+1
+ * 3. 当万里挑一员工数量超过历史最大时，等级+1
+ * 4. 当天纵奇才员工数量超过历史最大时，等级+1
+ */
+export function getStoreLevel(currentSSSProducts, currentWanliEmployees, currentTianzongEmployees) {
+  // 更新历史记录
+  updateStoreLevelHistory(currentSSSProducts, currentWanliEmployees, currentTianzongEmployees);
+  
+  // 初始等级为1
   let level = 1;
-  if (totalEmployees >= 1) level = 2;
-  if (totalEmployees >= 2) level = 3;
-  if (totalEmployees >= 3) level = 4;
-  if (hasDesigner) level = 5;
+  
+  // 检查SSS级商品数量是否超过历史最大
+  if (currentSSSProducts > 0 && currentSSSProducts >= storeLevelHistory.maxSSSProducts) {
+    level++;
+  }
+  
+  // 检查万里挑一员工数量是否超过历史最大
+  if (currentWanliEmployees > 0 && currentWanliEmployees >= storeLevelHistory.maxWanliEmployees) {
+    level++;
+  }
+  
+  // 检查天纵奇才员工数量是否超过历史最大
+  if (currentTianzongEmployees > 0 && currentTianzongEmployees >= storeLevelHistory.maxTianzongEmployees) {
+    level++;
+  }
+  
   return level;
 }
 

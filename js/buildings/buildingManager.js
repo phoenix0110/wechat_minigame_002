@@ -16,15 +16,6 @@ export default class BuildingManager {
       },
       { 
         id: 1,
-        name: '4S店', 
-        color: '#BB8FCE', 
-        icon: 'images/image_4s_1.png',
-        description: '购买豪车',
-        costRange: { min: 5000000, max: 100000000 }, // 500万-1亿
-        unlocked: true
-      },
-      { 
-        id: 2,
         name: '售楼处', 
         color: '#98D8C8', 
         icon: 'images/image_sell_house_1.png',
@@ -33,7 +24,7 @@ export default class BuildingManager {
         unlocked: true
       },
       { 
-        id: 3,
+        id: 2,
         name: '学校', 
         color: '#4ECDC4', 
         icon: 'images/image_school_1.png',
@@ -42,21 +33,12 @@ export default class BuildingManager {
         unlocked: true
       },
       { 
-        id: 4,
+        id: 3,
         name: '写字楼', 
         color: '#DDA0DD', 
         icon: 'images/image_office_1.png',
         description: '商业投资',
         costRange: { min: 100000000, max: 2000000000 }, // 1亿-20亿
-        unlocked: true
-      },
-      { 
-        id: 5,
-        name: '体育场', 
-        color: '#F7DC6F', 
-        icon: 'images/image_stadium_1.png',
-        description: '体育投资',
-        costRange: { min: 200000000, max: 3000000000 }, // 2亿-30亿
         unlocked: true
       }
     ];

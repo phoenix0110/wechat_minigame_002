@@ -10,6 +10,10 @@ import ClerkInfoModal from './ui/clerkInfoModal'; // 导入进货员信息弹窗
 import AssetManager from './managers/assetManager'; // 导入资产管理器
 import AssetModal from './ui/assetModal'; // 导入资产列表弹窗
 import { EmployeeStatsGenerator } from './config/employeeStats.js'; // 导入员工数值生成器
+import AudioManager from './managers/audioManager'; // 导入音频管理器
+import { CLERK, DESIGNER } from './config/luxuryConfig.js';
+import DesignerInfoModal from './ui/designerInfoModal';
+import DesignResumeModal from './ui/designResumeModal';
 
 
 const ctx = canvas.getContext('2d'); // 获取canvas的2D绘图上下文
@@ -30,12 +34,15 @@ export default class Main {
   clerkInfoModal = new ClerkInfoModal(); // 进货员信息弹窗
   assetManager = new AssetManager(); // 资产管理器
   assetModal = new AssetModal(this.assetManager); // 资产列表弹窗
+  audioManager = new AudioManager(); // 音频管理器
+  designerInfoModal = new DesignerInfoModal();
+  designResumeModal = new DesignResumeModal();
 
   gameState = 'loading'; // 游戏状态: 'loading'(加载中), 'intro'(剧情), 'playing'(游戏中)
   loadingProgress = 0; // 加载进度
   money = 10000000000; // 初始资金100亿元
   gridCols = 2; // 每行2个建筑
-  gridRows = 3; // 总共3行
+  gridRows = 2; // 总共2行
   cellSize = 160; // 每个格子的大小，适当放大
   gridStartX = 0; // 网格起始X坐标
   gridStartY = 0; // 网格起始Y坐标
@@ -222,9 +229,7 @@ export default class Main {
         const result = this.clerkResumeModal.handleTouch(x, y);
         if (result) {
           if (result.type === 'hire') {
-            this.handleClerkHire(result.resume);
-          } else if (result.type === 'refresh') {
-            this.messageSystem.addMessage('简历已刷新！', 'info');
+            this.handleEmployeeHire(result.resume);
           } else if (result.type === 'close') {
             this.currentClerkSlot = -1; // 关闭弹窗时重置状态
           }
@@ -236,13 +241,43 @@ export default class Main {
         const result = this.clerkInfoModal.handleTouch(x, y);
         if (result) {
           if (result.type === 'fire') {
-            this.handleClerkFire(result.clerkSlot);
+            this.clerkInfoModal.hide();
+            this.handleEmployeeFire(result.clerkSlot);
           } else if (result.type === 'close') {
             this.currentClerkSlot = -1; // 关闭弹窗时重置状态
           }
         }
         return; // 有弹窗时不处理其他交互
       }
+
+      // 优先处理弹窗（如果有弹窗打开，只处理弹窗交互）
+      if (this.designResumeModal.isVisible) {
+        const result = this.designResumeModal.handleTouch(x, y);
+        if (result) {
+          if (result.type === 'hire') {
+            this.handleEmployeeHire(result.resume);
+          } else if (result.type === 'close') {
+            this.currentClerkSlot = -1; // 关闭弹窗时重置状态
+          }
+        }
+        return; // 有弹窗时不处理其他交互
+      }
+
+      if (this.designerInfoModal.isVisible) {
+        const result = this.designerInfoModal.handleTouch(x, y);
+        if (result) {
+          if (result.type === 'fire') {
+            // 先关闭弹窗
+            this.designerInfoModal.hide();
+            // 然后解雇设计师
+            this.handleEmployeeFire(result.designerSlot);
+          } else if (result.type === 'close') {
+            this.designerInfoModal.hide();
+            this.currentClerkSlot = -1;
+          }
+          return;
+        }
+      }      
 
       // 处理奢侈品店页面本身的交互
       const result = this.luxuryStorePage.handleTouch(x, y);
@@ -270,10 +305,10 @@ export default class Main {
           this.currentClerkSlot = 3 + result.slotIndex; // 设计师位置标记为3+索引（3,4,5）
           if (result.hasDesigner) {
             // 显示设计师信息弹窗
-            this.clerkInfoModal.show(canvas.width, canvas.height, this.luxuryStorePage.hiredDesigners[result.slotIndex], this.currentClerkSlot);
+            this.designerInfoModal.show(canvas.width, canvas.height, this.luxuryStorePage.hiredDesigners[result.slotIndex], this.currentClerkSlot);
           } else {
             // 显示设计师招聘弹窗
-            this.clerkResumeModal.show(canvas.width, canvas.height, 4, this.luxuryStorePage.designer.price);
+            this.designResumeModal.show(canvas.width, canvas.height, 4, this.luxuryStorePage.designer.price);
           }
         } else if (result.type === 'store_info') {
           // 显示店铺信息弹窗
@@ -293,9 +328,10 @@ export default class Main {
       const result = this.clerkResumeModal.handleTouch(x, y);
       if (result) {
         if (result.type === 'hire') {
-          this.handleClerkHire(result.resume);
-        } else if (result.type === 'refresh') {
-          this.messageSystem.addMessage('简历已刷新！', 'info');
+          this.handleEmployeeHire(result.resume);
+        } else if (result.type === 'close') {
+          this.clerkResumeModal.hide();
+          this.currentClerkSlot = -1;
         }
         return;
       }
@@ -306,7 +342,40 @@ export default class Main {
       const result = this.clerkInfoModal.handleTouch(x, y);
       if (result) {
         if (result.type === 'fire') {
-          this.handleClerkFire(result.clerkSlot);
+          this.clerkInfoModal.hide();
+          this.handleEmployeeFire(result.clerkSlot);
+        } else if (result.type === 'close') {
+          this.clerkInfoModal.hide();
+          this.currentClerkSlot = -1;
+        }
+        return;
+      }
+    }
+
+    // 处理设计师简历弹窗（仅在主页面时）
+    if (this.gameView === 'main' && this.designResumeModal.isVisible) {
+      const result = this.designResumeModal.handleTouch(x, y);
+      if (result) {
+        if (result.type === 'hire') {
+          this.handleEmployeeHire(result.resume);
+        } else if (result.type === 'close') {
+          this.designResumeModal.hide();
+          this.currentClerkSlot = -1;
+        }
+        return;
+      }
+    }
+
+    // 处理设计师信息弹窗（仅在主页面时）
+    if (this.gameView === 'main' && this.designerInfoModal.isVisible) {
+      const result = this.designerInfoModal.handleTouch(x, y);
+      if (result) {
+        if (result.type === 'fire') {
+          this.designerInfoModal.hide();
+          this.handleEmployeeFire(result.designerSlot);
+        } else if (result.type === 'close') {
+          this.designerInfoModal.hide();
+          this.currentClerkSlot = -1;
         }
         return;
       }
@@ -470,6 +539,8 @@ export default class Main {
     
     this.clerkResumeModal.hide();
     this.clerkInfoModal.hide();
+    this.designResumeModal.hide();
+    this.designerInfoModal.hide();
     this.currentClerkSlot = -1;
     
     // 重置奢侈品店页面的内部弹窗状态
@@ -487,46 +558,34 @@ export default class Main {
   /**
    * 处理员工招聘
    */
-  handleClerkHire(resume) {
-    let basePrice;
-    let isDesigner = false;
-    let designerSlotIndex = -1;
-    
-    if (this.currentClerkSlot >= 3) {
-      // 设计师位置（3,4,5）
-      designerSlotIndex = this.currentClerkSlot - 3;
-      isDesigner = true;
-    }
-    
+  handleEmployeeHire(resume) {
     // 简历弹窗已经生成了完整的员工对象，直接使用
     const employee = resume;
-    basePrice = employee.salary;
+    const basePrice = employee.salary;
     
     if (this.money >= basePrice) {
       this.money -= basePrice;
       
+      // 判断是设计师还是进货员
+      const isDesigner = this.currentClerkSlot >= 3;
+      const slotIndex = isDesigner ? this.currentClerkSlot - 3 : this.currentClerkSlot;
+      
+      // 根据类型调用相应的招聘方法
       if (isDesigner) {
-        this.luxuryStorePage.hireDesigner(designerSlotIndex, employee);
+        this.luxuryStorePage.hireDesigner(slotIndex, employee);
       } else {
-        this.luxuryStorePage.hireClerk(this.currentClerkSlot, employee);
+        this.luxuryStorePage.hireClerk(slotIndex, employee);
       }
       
-      // 重置所有弹窗和交互状态
-      this.resetAllModalStates();
+      // 关闭弹窗并重置状态
+      if (isDesigner) {
+        this.designResumeModal.hide();
+      } else {
+        this.clerkResumeModal.hide();
+      }
+      this.currentClerkSlot = -1;
       
-      // 强制确保状态重置
-      setTimeout(() => {
-        this.clerkResumeModal.isVisible = false;
-        this.clerkInfoModal.isVisible = false;
-        this.currentClerkSlot = -1;
-        console.log('强制重置后状态:', {
-          clerkResumeModal: this.clerkResumeModal.isVisible,
-          clerkInfoModal: this.clerkInfoModal.isVisible,
-          currentClerkSlot: this.currentClerkSlot
-        });
-      }, 100);
-      
-      console.log(`招聘了${employee.name}，剩余金额：${this.formatMoney(this.money)}`);
+      console.log(`招聘了${isDesigner ? '设计师' : '进货员'}${employee.name}，剩余金额：${this.formatMoney(this.money)}`);
       console.log('员工能力:', employee.abilities);
       
       // 检查是否花光了钱
@@ -541,27 +600,28 @@ export default class Main {
   /**
    * 处理员工解雇
    */
-  handleClerkFire(slotIndex) {
-    if (slotIndex >= 3) {
-      // 解雇设计师（3,4,5）
-      const designerSlotIndex = slotIndex - 3;
-      const hiredDesigner = this.luxuryStorePage.hiredDesigners[designerSlotIndex];
+  handleEmployeeFire(slotIndex) {
+    const isDesigner = slotIndex >= 3;
+    const actualSlotIndex = isDesigner ? slotIndex - 3 : slotIndex;
+    
+    if (isDesigner) {
+      const hiredDesigner = this.luxuryStorePage.hiredDesigners[actualSlotIndex];
       if (hiredDesigner) {
-        this.luxuryStorePage.fireDesigner(designerSlotIndex);
-        this.resetAllModalStates();
+        this.luxuryStorePage.fireDesigner(actualSlotIndex);
         this.messageSystem.addMessage(`已解雇设计师${hiredDesigner.name}`, 'info');
         console.log(`解雇了设计师${hiredDesigner.name}`);
       }
     } else {
-      // 解雇进货员（0,1,2）
-      const hiredClerk = this.luxuryStorePage.hiredClerks[slotIndex];
+      const hiredClerk = this.luxuryStorePage.hiredClerks[actualSlotIndex];
       if (hiredClerk) {
-        this.luxuryStorePage.fireClerk(slotIndex);
-        this.resetAllModalStates();
+        this.luxuryStorePage.fireClerk(actualSlotIndex);
         this.messageSystem.addMessage(`已解雇进货员${hiredClerk.name}`, 'info');
         console.log(`解雇了进货员${hiredClerk.name}`);
       }
     }
+    
+    // 重置状态
+    this.currentClerkSlot = -1;
   }
 
   /**
@@ -673,6 +733,11 @@ export default class Main {
     console.log('Game start called, beginning loading...');
     this.gameState = 'loading';
     this.loadingProgress = 0;
+    
+    // 初始化并开始播放背景音乐
+    this.audioManager.init();
+    this.audioManager.setBgMusicVolume(0); // 设置音量为50%
+    this.audioManager.startBgMusic();
     
     this.aniId = requestAnimationFrame(this.loop.bind(this)); // 开始新的动画循环
   }
@@ -1043,6 +1108,20 @@ export default class Main {
       // 绘制对话系统（最上层）
       this.dialogueSystem.render(ctx, canvas.width, canvas.height);
     }
+
+    // 渲染弹窗
+    if (this.clerkInfoModal.isVisible) {
+      this.clerkInfoModal.render(ctx);
+    }
+    if (this.clerkResumeModal.isVisible) {
+      this.clerkResumeModal.render(ctx);
+    }
+    if (this.designerInfoModal.isVisible) {
+      this.designerInfoModal.render(ctx);
+    }
+    if (this.designResumeModal.isVisible) {
+      this.designResumeModal.render(ctx);
+    }
   }
 
   /**
@@ -1124,5 +1203,14 @@ export default class Main {
 
     // 请求下一帧动画
     this.aniId = requestAnimationFrame(this.loop.bind(this));
+  }
+
+  handleResult(result) {
+    if (result.type === CLERK) {
+      this.clerkResumeModal.show(this.canvas.width, this.canvas.height, result.data);
+    } else if (result.type === DESIGNER) {
+
+      this.designResumeModal.show(this.canvas.width, this.canvas.height, result.data);
+    }
   }
 }
