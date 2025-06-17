@@ -3,7 +3,7 @@ import GameInfo from './runtime/gameinfo'; // 导入游戏UI类
 import BuildingManager from './buildings/buildingManager'; // 导入建筑管理器
 import MessageSystem from './ui/messageSystem'; // 导入消息系统
 import LuxuryStorePage from './ui/luxuryStorePage'; // 导入奢侈品商店页面
-import RealEstateModal from './ui/realEstateModal'; // 导入售楼处弹窗
+import RealEstatePage from './ui/realEstatePage'; // 导入售楼处页面
 import DialogueSystem from './ui/dialogue'; // 导入对话系统
 import ClerkResumeModal from './ui/clerkResumeModal'; // 导入进货员简历弹窗
 import ClerkInfoModal from './ui/clerkInfoModal'; // 导入进货员信息弹窗
@@ -14,6 +14,8 @@ import AudioManager from './managers/audioManager'; // 导入音频管理器
 import { CLERK, DESIGNER } from './config/luxuryConfig.js';
 import DesignerInfoModal from './ui/designerInfoModal';
 import DesignResumeModal from './ui/designResumeModal';
+import { sellProperty, stopPriceUpdateTimer, restartPriceUpdateTimer, formatPropertyPrice, getUserProperties } from './config/realEstateConfig.js';
+import AssetTracker from './managers/assetTracker';
 
 
 const ctx = canvas.getContext('2d'); // 获取canvas的2D绘图上下文
@@ -27,8 +29,8 @@ export default class Main {
   buildingManager = new BuildingManager(); // 建筑管理器
   messageSystem = new MessageSystem(); // 消息系统
   luxuryStorePage = new LuxuryStorePage(); // 奢侈品商店页面
-  gameView = 'main'; // 游戏视图: 'main'(主界面), 'luxury'(奢侈品店)
-  realEstateModal = new RealEstateModal(); // 售楼处弹窗
+  gameView = 'main'; // 游戏视图: 'main'(主界面), 'luxury'(奢侈品店), 'realEstate'(售楼处)
+  realEstatePage = null; // 售楼处页面，稍后初始化
   dialogueSystem = new DialogueSystem(); // 对话系统
   clerkResumeModal = new ClerkResumeModal(); // 进货员简历弹窗
   clerkInfoModal = new ClerkInfoModal(); // 进货员信息弹窗
@@ -37,6 +39,7 @@ export default class Main {
   audioManager = new AudioManager(); // 音频管理器
   designerInfoModal = new DesignerInfoModal();
   designResumeModal = new DesignResumeModal();
+  assetTracker = null; // 资产追踪器，稍后初始化
 
   gameState = 'loading'; // 游戏状态: 'loading'(加载中), 'intro'(剧情), 'playing'(游戏中)
   loadingProgress = 0; // 加载进度
@@ -67,6 +70,20 @@ export default class Main {
 
     // 绑定触摸事件
     this.bindTouchEvents();
+    
+    // 监听页面隐藏事件，停止定时器以节省资源
+    if (typeof wx !== 'undefined') {
+      wx.onHide(() => {
+        console.log('游戏进入后台，停止房产价格更新定时器');
+        stopPriceUpdateTimer();
+      });
+      
+      wx.onShow(() => {
+        console.log('游戏回到前台，重新启动房产价格更新定时器');
+        // 重新启动房产价格更新定时器
+        restartPriceUpdateTimer();
+      });
+    }
     
     // 开始游戏
     this.start();
@@ -161,6 +178,16 @@ export default class Main {
   finishLoading() {
     console.log('Loading finished, starting intro...');
     this.loadingProgress = 100;
+    
+    // 初始化资产追踪器
+    this.assetTracker = new AssetTracker();
+    
+    // 初始化售楼处页面，传入资产追踪器
+    this.realEstatePage = new RealEstatePage(this.assetTracker);
+    
+    // 记录初始资产状态
+    this.assetTracker.recordAssetValue(this.money, 0);
+    
     setTimeout(() => {
       this.startIntroDialogue();
     }, 500); // 稍微延迟一下，让加载完成的提示显示一会儿
@@ -175,6 +202,9 @@ export default class Main {
     wx.onTouchMove(this.onTouchMove.bind(this));
     wx.onTouchEnd(this.onTouchEnd.bind(this));
 
+    // 记录触摸开始位置
+    this.touchStartY = 0;
+    this.isTouching = false;
   }
 
   /**
@@ -187,16 +217,29 @@ export default class Main {
       const x = touch.clientX;
       const y = touch.clientY;
       
+      this.touchStartY = y;
+      this.isTouching = true;
+      
       this.handleTouch(x, y);
     }
   }
 
   onTouchMove(e) {
-    // 可以在这里处理拖拽等操作
+    if (this.isTouching && e.touches && e.touches.length > 0) {
+      const touch = e.touches[0];
+      const currentY = touch.clientY;
+      const deltaY = this.touchStartY - currentY;
+      
+      // 只在售楼处页面处理滚动
+      if (this.gameView === 'realEstate' && this.realEstatePage.isVisible) {
+        this.handleScroll(deltaY * 2); // 增加滚动敏感度
+        this.touchStartY = currentY; // 更新起始位置，实现连续滚动
+      }
+    }
   }
 
   onTouchEnd(e) {
-    // 触摸结束处理
+    this.isTouching = false;
   }
 
   /**
@@ -323,6 +366,48 @@ export default class Main {
       return;
     }
 
+    // 处理售楼处页面
+    if (this.gameView === 'realEstate') {
+      const result = this.realEstatePage.handleTouch(x, y);
+      if (result) {
+        if (result.type === 'close') {
+          this.gameView = 'main';
+          this.realEstatePage.hide();
+        } else if (result.type === 'purchase') {
+          // 处理房产购买
+          const property = result.option;
+          if (this.money >= property.totalPrice) {
+            // 扣除金钱
+            this.money -= property.totalPrice;
+            
+            // 购买房产
+            const purchasedProperty = this.realEstatePage.buyProperty(property.id);
+            if (purchasedProperty) {
+              // 记录到资产管理器
+              this.assetManager.addAsset(purchasedProperty, '房产', purchasedProperty.totalPrice);
+              
+              // 添加到资产追踪器的交易记录
+              this.assetTracker.addTransaction('buy', purchasedProperty, purchasedProperty.totalPrice, this.money);
+              
+              // 显示购买成功消息
+              this.messageSystem.addMessage(`成功购买 ${purchasedProperty.name}！`, 'success');
+              
+              // 添加购买通知动画
+              this.addPurchaseNotification(`购买 ${purchasedProperty.name}`);
+            }
+          } else {
+            // 金钱不足
+            this.messageSystem.addMessage('金钱不足，无法购买此房产！', 'error');
+          }
+        } else if (result.type === 'sell_property') {
+          // 处理房产出售
+          this.handlePropertySale(result.property, '房产');
+        }
+      }
+      // 在售楼处页面内，不处理其他任何交互，直接返回
+      return;
+    }
+
     // 处理进货员简历弹窗（仅在主页面时）
     if (this.gameView === 'main' && this.clerkResumeModal.isVisible) {
       const result = this.clerkResumeModal.handleTouch(x, y);
@@ -389,26 +474,26 @@ export default class Main {
       }
     }
 
-    if (this.realEstateModal.isVisible) {
-      const result = this.realEstateModal.handleTouch(x, y);
-      if (result) {
-        if (result.type === 'purchase') {
-          this.handleRealEstatePurchase(result.option);
-        }
-        return;
-      }
+    // 只有在主界面时才处理建筑点击和资产按钮点击
+    if (this.gameView !== 'main') {
+      return; // 不在主界面时不处理任何点击
     }
 
-    // 检查是否点击了资产列表按钮
-    if (this.assetButtonX && x >= this.assetButtonX && x <= this.assetButtonX + this.assetButtonWidth &&
+    // 检查是否点击了资产按钮（在主界面且没有弹窗时）
+    if (this.assetButtonX !== undefined && 
+        x >= this.assetButtonX && x <= this.assetButtonX + this.assetButtonWidth &&
         y >= this.assetButtonY && y <= this.assetButtonY + this.assetButtonHeight) {
+      // 显示资产列表弹窗
       this.assetModal.show(canvas.width, canvas.height);
       return;
     }
 
     // 检查是否有任何弹窗打开，如果有则不处理9宫格点击
-    if (this.realEstateModal.isVisible || 
-        this.clerkResumeModal.isVisible || this.clerkInfoModal.isVisible || this.assetModal.isVisible) {
+    if (this.clerkResumeModal.isVisible || 
+        this.clerkInfoModal.isVisible || 
+        this.assetModal.isVisible ||
+        this.designResumeModal.isVisible ||
+        this.designerInfoModal.isVisible) {
       return; // 有弹窗时不处理9宫格点击
     }
 
@@ -440,7 +525,8 @@ export default class Main {
     }
     
     if (building.name === '售楼处') {
-      this.realEstateModal.show(canvas.width, canvas.height);
+      this.gameView = 'realEstate';
+      this.realEstatePage.show();
       return;
     }
     
@@ -625,24 +711,36 @@ export default class Main {
   }
 
   /**
-   * 处理房产购买
+   * 处理房产出售
    */
-  handleRealEstatePurchase(option) {
-    if (this.money >= option.totalPrice) {
-      this.money -= option.totalPrice;
+  handlePropertySale(property, category) {
+    // 使用已导入的房产出售函数
+    const saleResult = sellProperty(property.id);
+    
+    if (saleResult) {
+      // 从资产管理器中移除（使用房产对象作为asset参数）
+      const assetSaleResult = this.assetManager.sellAsset(property, category);
       
-      // 记录到资产管理器
-      this.assetManager.addAsset(option, '售楼处', option.totalPrice);
-      
-      // 添加购买通知动画
-      this.addPurchaseNotification(option.name);
-      
-      // 检查是否花光了钱
-      if (this.money <= 0) {
-        this.messageSystem.addMessage('恭喜！你成功花光了所有的钱！', 'success');
+      if (assetSaleResult) {
+        // 增加玩家金钱
+        this.money += saleResult.sellPrice;
+        
+        // 添加到资产追踪器的交易记录
+        this.assetTracker.addTransaction('sell', property, saleResult.sellPrice, this.money);
+        
+        // 显示出售成功消息
+        this.messageSystem.addMessage(
+          `成功出售 ${property.name}，获得 ${formatPropertyPrice(saleResult.sellPrice)}！`, 
+          'success'
+        );
+        
+        // 添加出售通知动画
+        this.addPurchaseNotification(`出售 ${property.name}`);
+      } else {
+        this.messageSystem.addMessage('出售失败，请重试', 'error');
       }
     } else {
-      this.messageSystem.addMessage('余额不足，无法购买此房产', 'warning');
+      this.messageSystem.addMessage('无法出售此房产', 'error');
     }
   }
 
@@ -1074,35 +1172,43 @@ export default class Main {
 
     if (this.gameState === 'loading') {
       this.renderLoadingScreen(ctx);
-    } else if (this.gameState === 'playing' && this.gameView === 'luxury') {
-      // 奢侈品店页面
-      this.luxuryStorePage.render(ctx);
-      
-      // 绘制弹窗
-      this.clerkResumeModal.render(ctx);
-      this.clerkInfoModal.render(ctx);
-      
-      // 绘制消息系统和通知
-      this.messageSystem.render(ctx, canvas.width);
-      this.renderPurchaseNotifications(ctx);
-    } else {
-      // 主界面
-      this.renderBackground(ctx); // 绘制背景
-      this.renderMoney(ctx); // 绘制金钱余额
-      this.renderBuildings(ctx); // 绘制九宫格建筑
-      
-      // 只在游戏模式下显示消息提示
-      if (this.gameState === 'playing') {
-        this.messageSystem.render(ctx, canvas.width); // 绘制消息提示
-        this.renderPurchaseNotifications(ctx); // 绘制购买通知动画
-      }
-      
-      // 绘制弹窗（在最上层）
-      if (this.gameState === 'playing') {
-        this.realEstateModal.render(ctx);
+    } else if (this.gameState === 'playing') {
+      if (this.gameView === 'luxury') {
+        // 奢侈品店页面
+        this.luxuryStorePage.render(ctx);
+        
+        // 绘制弹窗
         this.clerkResumeModal.render(ctx);
         this.clerkInfoModal.render(ctx);
-        this.assetModal.render(ctx);
+        
+        // 绘制消息系统和通知
+        this.messageSystem.render(ctx, canvas.width);
+        this.renderPurchaseNotifications(ctx);
+      } else if (this.gameView === 'realEstate') {
+        // 售楼处页面
+        this.realEstatePage.render(ctx);
+        
+        // 绘制消息系统和通知
+        this.messageSystem.render(ctx, canvas.width);
+        this.renderPurchaseNotifications(ctx);
+      } else {
+        // 主界面
+        this.renderBackground(ctx); // 绘制背景
+        this.renderMoney(ctx); // 绘制金钱余额
+        this.renderBuildings(ctx); // 绘制九宫格建筑
+        
+        // 只在游戏模式下显示消息提示
+        if (this.gameState === 'playing') {
+          this.messageSystem.render(ctx, canvas.width); // 绘制消息提示
+          this.renderPurchaseNotifications(ctx); // 绘制购买通知动画
+        }
+        
+        // 绘制弹窗（在最上层）
+        if (this.gameState === 'playing') {
+          this.clerkResumeModal.render(ctx);
+          this.clerkInfoModal.render(ctx);
+          this.assetModal.render(ctx);
+        }
       }
       
       // 绘制对话系统（最上层）
@@ -1193,7 +1299,24 @@ export default class Main {
       if (this.gameView === 'luxury') {
         this.luxuryStorePage.update();
       }
+      
+      // 定期检查并记录资产价值变化
+      this.updateAssetTracking();
     }
+  }
+  
+  /**
+   * 更新资产追踪
+   */
+  updateAssetTracking() {
+    // 计算当前房产总价值
+    const userProperties = getUserProperties();
+    const totalPropertyValue = userProperties.reduce((total, property) => {
+      return total + property.currentPrice;
+    }, 0);
+    
+    // 检查是否需要记录新的资产价值点
+    this.assetTracker.checkAndRecordAssetValue(this.money, totalPropertyValue);
   }
 
   // 实现游戏帧循环
@@ -1211,6 +1334,15 @@ export default class Main {
     } else if (result.type === DESIGNER) {
 
       this.designResumeModal.show(this.canvas.width, this.canvas.height, result.data);
+    }
+  }
+
+  /**
+   * 处理滚动事件
+   */
+  handleScroll(deltaY) {
+    if (this.gameView === 'realEstate') {
+      this.realEstatePage.handleScroll(deltaY);
     }
   }
 }

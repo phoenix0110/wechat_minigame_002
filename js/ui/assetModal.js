@@ -5,7 +5,7 @@ export default class AssetModal {
   constructor(assetManager) {
     this.assetManager = assetManager;
     this.isVisible = false;
-    this.modalWidth = 400;
+    this.modalWidth = 400; // 恢复原来的宽度
     this.modalHeight = 500;
     this.modalX = 0;
     this.modalY = 0;
@@ -175,16 +175,25 @@ export default class AssetModal {
     ctx.font = '12px Arial';
     ctx.textAlign = 'left';
     
-    const statsY = this.modalY + 50;
+    const statsY = this.modalY + 45;
     const leftX = this.modalX + 15;
     const rightX = this.modalX + this.modalWidth / 2 + 10;
     
     ctx.fillText(`总资产: ${stats.totalAssets}件`, leftX, statsY);
     ctx.fillText(`总分类: ${stats.totalCategories}个`, rightX, statsY);
     
-    ctx.fillText(`总花费: ${this.assetManager.formatPrice(stats.totalSpent)}`, leftX, statsY + 15);
+    ctx.fillText(`总花费: ${this.assetManager.formatPrice(stats.totalSpent)}`, leftX, statsY + 12);
+    ctx.fillText(`出售收入: ${this.assetManager.formatPrice(stats.totalEarned)}`, rightX, statsY + 12);
+    
+    // 显示净支出
+    const netSpent = stats.netSpent;
+    ctx.fillStyle = netSpent >= 0 ? '#E74C3C' : '#27AE60';
+    ctx.fillText(`净支出: ${this.assetManager.formatPrice(Math.abs(netSpent))}`, leftX, statsY + 24);
+    
+    // 显示最贵分类
     if (stats.mostExpensiveCategory) {
-      ctx.fillText(`最贵分类: ${stats.mostExpensiveCategory}`, rightX, statsY + 15);
+      ctx.fillStyle = '#34495E';
+      ctx.fillText(`最贵分类: ${stats.mostExpensiveCategory}`, rightX, statsY + 24);
     }
   }
 

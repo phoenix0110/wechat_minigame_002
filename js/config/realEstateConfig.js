@@ -3,92 +3,381 @@
  * 包含房产的单价和批量购买选项
  */
 
-// 房产单价配置
-export const PROPERTY_PRICES = {
-  apartment: 50000000, // 大平层单价：5000万
-  villa: 120000000     // 别墅单价：1.2亿
+// 房产配置
+const CITY_TYPES = {
+  SUPER_FIRST_TIER: {
+    name: '超一线城市',
+    basePrice: 20000000, // 2000万
+    priceMultiplier: 1.5
+  },
+  FIRST_TIER: {
+    name: '一线城市',
+    basePrice: 10000000, // 1000万
+    priceMultiplier: 1.2
+  },
+  SECOND_TIER: {
+    name: '二线城市',
+    basePrice: 5000000, // 500万
+    priceMultiplier: 1.0
+  },
+  THIRD_TIER: {
+    name: '三线城市',
+    basePrice: 1000000, // 100万
+    priceMultiplier: 0.8
+  }
 };
 
-// 售楼大厅选项配置
-export const REAL_ESTATE_OPTIONS = [
-  // 第一行：单套房产
-  { 
-    id: 1, 
-    type: 'apartment', 
-    quantity: 1, 
-    name: '豪华大平层', 
-    icon: '🏢',
-    description: '市中心黄金地段，270平米精装修',
-    totalPrice: PROPERTY_PRICES.apartment * 1
+const PROPERTY_CATEGORIES = {
+  RESIDENTIAL: {
+    name: '住宅',
+    types: {
+      BUNGALOW: {
+        name: '平房',
+        icon: '🏠',
+        priceMultiplier: 0.8
+      },
+      LARGE_FLAT: {
+        name: '大平层',
+        icon: '🏢',
+        priceMultiplier: 1.2
+      },
+      VILLA: {
+        name: '别墅',
+        icon: '🏡',
+        priceMultiplier: 1.5
+      }
+    }
   },
-  { 
-    id: 2, 
-    type: 'villa', 
-    quantity: 1, 
-    name: '独栋别墅', 
-    icon: '🏘️',
-    description: '私人花园，500平米独栋设计',
-    totalPrice: PROPERTY_PRICES.villa * 1
+  BUSINESS: {
+    name: '经营型',
+    types: {
+      MALL: {
+        name: '商场',
+        icon: '🏬',
+        priceMultiplier: 2.0
+      },
+      CONVENIENCE_STORE: {
+        name: '便利店',
+        icon: '🏪',
+        priceMultiplier: 1.0
+      },
+      CAFE: {
+        name: '咖啡店',
+        icon: '☕',
+        priceMultiplier: 1.2
+      },
+      RESTAURANT: {
+        name: '餐厅',
+        icon: '🍽️',
+        priceMultiplier: 1.3
+      },
+      GYM: {
+        name: '健身房',
+        icon: '💪',
+        priceMultiplier: 1.4
+      }
+    }
   },
-  
-  // 第二行：10套房产
-  { 
-    id: 3, 
-    type: 'apartment', 
-    quantity: 10, 
-    name: '10套大平层', 
-    icon: '🏢',
-    description: '整层购买，投资首选',
-    totalPrice: PROPERTY_PRICES.apartment * 10
-  },
-  { 
-    id: 4, 
-    type: 'villa', 
-    quantity: 10, 
-    name: '10套别墅', 
-    icon: '🏘️',
-    description: '别墅群落，尊贵社区',
-    totalPrice: PROPERTY_PRICES.villa * 10
-  },
-  
-  // 第三行：100套房产
-  { 
-    id: 5, 
-    type: 'apartment', 
-    quantity: 100, 
-    name: '100套大平层', 
-    icon: '🏢',
-    description: '整座大厦，地产大亨',
-    totalPrice: PROPERTY_PRICES.apartment * 100
-  },
-  { 
-    id: 6, 
-    type: 'villa', 
-    quantity: 100, 
-    name: '100套别墅', 
-    icon: '🏘️',
-    description: '别墅小镇，奢华生活',
-    totalPrice: PROPERTY_PRICES.villa * 100
+  COMMERCIAL: {
+    name: '商用',
+    types: {
+      OFFICE_BUILDING: {
+        name: '写字楼',
+        icon: '🏢',
+        priceMultiplier: 1.8
+      }
+    }
   }
-];
+};
 
-/**
- * 根据ID获取房产选项
- */
-export function getPropertyOptionById(id) {
-  return REAL_ESTATE_OPTIONS.find(option => option.id === id);
+// 刷新间隔（10分钟）
+const REFRESH_INTERVAL = 10 * 60 * 1000;
+
+// 全局房产数据池（48套房产）
+let ALL_PROPERTIES = [];
+
+// 当前交易中心展示的房产（15套）
+let CURRENT_TRADING_PROPERTIES = [];
+
+// 全局价格更新定时器
+let priceUpdateTimer = null;
+let lastPriceUpdateTime = 0;
+let nextPriceUpdateTime = 0;
+
+// 生成所有48套房产数据
+function generateAllProperties() {
+  const properties = [];
+  let id = 1;
+
+  // 为每个城市类型生成房产
+  Object.entries(CITY_TYPES).forEach(([cityKey, cityData]) => {
+    // 为每个房产类别生成房产
+    Object.entries(PROPERTY_CATEGORIES).forEach(([categoryKey, categoryData]) => {
+      // 为每个房产类型生成房产
+      Object.entries(categoryData.types).forEach(([typeKey, typeData]) => {
+        // 每种类型生成4个房产
+        for (let i = 0; i < 4; i++) {
+          const basePrice = cityData.basePrice;
+          const totalPrice = Math.round(
+            basePrice * 
+            cityData.priceMultiplier * 
+            typeData.priceMultiplier * 
+            (0.9 + Math.random() * 0.2) // 添加随机浮动
+          );
+
+          properties.push({
+            id: id++,
+            name: `${cityData.name}${typeData.name}`,
+            icon: typeData.icon,
+            category: categoryData.name,
+            type: typeData.name,
+            city: cityData.name,
+            basePrice: totalPrice, // 保存基础价格，用于计算涨跌
+            currentPrice: totalPrice,
+            totalPrice: totalPrice,
+            highestPrice: totalPrice,
+            isPurchased: false, // 标记是否已被购买
+            purchaseTime: null, // 购买时间
+            purchasePrice: null, // 购买时的价格
+            priceHistory: [{ // 历史价格记录
+              timestamp: Date.now(),
+              price: totalPrice
+            }]
+          });
+        }
+      });
+    });
+  });
+
+  ALL_PROPERTIES = properties;
+  return properties;
 }
 
-/**
- * 格式化价格显示
- */
-export function formatPropertyPrice(price) {
+// 更新所有房产价格（1%-5%随机涨跌）
+function updateAllPropertyPrices() {
+  const now = Date.now();
+  
+  ALL_PROPERTIES.forEach(property => {
+    // 只有未被购买的房产才更新价格
+    if (!property.isPurchased) {
+      // 随机涨跌1%-5%
+      const changePercent = (Math.random() * 0.04 + 0.01) * (Math.random() > 0.5 ? 1 : -1);
+      const newPrice = Math.round(property.currentPrice * (1 + changePercent));
+      
+      property.currentPrice = Math.max(newPrice, property.basePrice * 0.5); // 最低不低于基础价格的50%
+      property.totalPrice = property.currentPrice;
+      
+      // 更新历史最高价
+      if (property.currentPrice > property.highestPrice) {
+        property.highestPrice = property.currentPrice;
+      }
+      
+      // 记录历史价格
+      property.priceHistory.push({
+        timestamp: now,
+        price: property.currentPrice
+      });
+      
+      // 清理超过1小时的历史记录
+      const oneHourAgo = now - (60 * 60 * 1000);
+      property.priceHistory = property.priceHistory.filter(record => 
+        record.timestamp >= oneHourAgo
+      );
+    }
+  });
+}
+
+// 从48套房产中随机选择15套用于交易中心展示
+function selectTradingProperties() {
+  // 获取所有未被购买的房产
+  const availableProperties = ALL_PROPERTIES.filter(property => !property.isPurchased);
+  
+  // 如果可用房产少于15套，返回所有可用房产
+  if (availableProperties.length <= 15) {
+    return availableProperties;
+  }
+  
+  // 随机选择15套房产
+  const selectedProperties = [];
+  const availableIndices = availableProperties.map((_, index) => index);
+  
+  for (let i = 0; i < 15; i++) {
+    const randomIndex = Math.floor(Math.random() * availableIndices.length);
+    const propertyIndex = availableIndices.splice(randomIndex, 1)[0];
+    selectedProperties.push(availableProperties[propertyIndex]);
+  }
+  
+  return selectedProperties;
+}
+
+// 启动全局价格更新定时器
+function startPriceUpdateTimer() {
+  // 清除现有定时器
+  if (priceUpdateTimer) {
+    clearInterval(priceUpdateTimer);
+  }
+  
+  // 设置初始更新时间
+  const now = Date.now();
+  lastPriceUpdateTime = now;
+  nextPriceUpdateTime = now + REFRESH_INTERVAL;
+  
+  // 启动定时器，每分钟检查一次是否需要更新
+  priceUpdateTimer = setInterval(() => {
+    const currentTime = Date.now();
+    
+    // 检查是否到了更新时间
+    if (currentTime >= nextPriceUpdateTime) {
+      console.log('执行房产价格统一更新...');
+      
+      // 更新所有房产价格
+      updateAllPropertyPrices();
+      
+      // 重新选择交易中心展示的房产
+      CURRENT_TRADING_PROPERTIES = selectTradingProperties();
+      
+      // 为选中的房产设置倒计时
+      CURRENT_TRADING_PROPERTIES.forEach(property => {
+        property.remainingTime = REFRESH_INTERVAL;
+        property.lastUpdateTime = currentTime;
+      });
+      
+      // 更新时间记录
+      lastPriceUpdateTime = currentTime;
+      nextPriceUpdateTime = currentTime + REFRESH_INTERVAL;
+      
+      console.log('房产价格更新完成，下次更新时间:', new Date(nextPriceUpdateTime));
+    }
+  }, 60000); // 每分钟检查一次
+}
+
+// 停止全局价格更新定时器
+function stopPriceUpdateTimer() {
+  if (priceUpdateTimer) {
+    clearInterval(priceUpdateTimer);
+    priceUpdateTimer = null;
+    console.log('房产价格更新定时器已停止');
+  }
+}
+
+// 重新启动价格更新定时器（在页面重新显示时使用）
+function restartPriceUpdateTimer() {
+  // 先停止现有定时器
+  stopPriceUpdateTimer();
+  
+  // 检查是否需要立即更新价格
+  checkPriceUpdate();
+  
+  // 重新启动定时器
+  startPriceUpdateTimer();
+  
+  console.log('房产价格更新定时器已重新启动');
+}
+
+// 获取距离下次价格更新的剩余时间 
+function getTimeUntilNextPriceUpdate() {
+  const now = Date.now();
+  return Math.max(0, nextPriceUpdateTime - now);
+}
+
+// 检查价格是否需要更新（供外部调用）
+function checkPriceUpdate() {
+  const now = Date.now();
+  if (now >= nextPriceUpdateTime) {
+    console.log('触发房产价格更新检查...');
+    
+    // 更新所有房产价格
+    updateAllPropertyPrices();
+    
+    // 重新选择交易中心展示的房产
+    CURRENT_TRADING_PROPERTIES = selectTradingProperties();
+    
+    // 为选中的房产设置倒计时
+    CURRENT_TRADING_PROPERTIES.forEach(property => {
+      property.remainingTime = REFRESH_INTERVAL;
+      property.lastUpdateTime = now;
+    });
+    
+    // 更新时间记录
+    lastPriceUpdateTime = now;
+    nextPriceUpdateTime = now + REFRESH_INTERVAL;
+    
+    return true;
+  }
+  return false;
+}
+
+// 购买房产
+function purchaseProperty(propertyId) {
+  const property = ALL_PROPERTIES.find(p => p.id === propertyId);
+  if (property && !property.isPurchased) {
+    property.isPurchased = true;
+    property.purchaseTime = Date.now();
+    property.purchasePrice = property.currentPrice;
+    
+    // 从当前交易列表中移除
+    CURRENT_TRADING_PROPERTIES = CURRENT_TRADING_PROPERTIES.filter(p => p.id !== propertyId);
+    
+    return property;
+  }
+  return null;
+}
+
+// 出售房产
+function sellProperty(propertyId) {
+  const property = ALL_PROPERTIES.find(p => p.id === propertyId);
+  if (property && property.isPurchased) {
+    
+    // 重置房产状态，使其可以重新进入交易市场
+    property.isPurchased = false;
+    property.purchaseTime = null;
+    property.purchasePrice = null;
+    
+    return {
+      property: property,
+      sellPrice: property.currentPrice
+    };
+  }
+  return null;
+}
+
+// 获取用户已购买的房产
+function getUserProperties() {
+  return ALL_PROPERTIES.filter(property => property.isPurchased);
+}
+
+// 初始化房产数据
+function initializeRealEstate() {
+  generateAllProperties();
+  CURRENT_TRADING_PROPERTIES = selectTradingProperties();
+  
+  const now = Date.now();
+  CURRENT_TRADING_PROPERTIES.forEach(property => {
+    property.remainingTime = REFRESH_INTERVAL;
+    property.lastUpdateTime = now;
+  });
+  
+  // 启动全局价格更新定时器
+  startPriceUpdateTimer();
+  
+  return CURRENT_TRADING_PROPERTIES;
+}
+
+// 刷新交易中心（保持向后兼容，但使用新的统一更新机制）
+function refreshTradingCenter() {
+  // 检查是否需要更新价格
+  checkPriceUpdate();
+  return CURRENT_TRADING_PROPERTIES;
+}
+
+// 格式化房产价格显示
+function formatPropertyPrice(price) {
   if (price >= 100000000) {
-    return (price / 100000000).toFixed(1) + '亿元';
+    return `${(price / 100000000).toFixed(1)}亿`;
   } else if (price >= 10000) {
-    return (price / 10000).toFixed(0) + '万元';
+    return `${(price / 10000).toFixed(1)}万`;
   } else {
-    return price + '元';
+    return `${price.toLocaleString()}元`;
   }
 }
 
@@ -98,7 +387,40 @@ export function formatPropertyPrice(price) {
 export function getPropertyTypeName(type) {
   const typeNames = {
     apartment: '大平层',
-    villa: '别墅'
+    villa: '别墅',
+    mansion: '豪宅',
+    penthouse: '顶层公寓'
   };
   return typeNames[type] || type;
-} 
+}
+
+// 格式化剩余时间显示
+function formatRemainingTime(remainingTime) {
+  const minutes = Math.floor(remainingTime / 60000);
+  const seconds = Math.floor((remainingTime % 60000) / 1000);
+  return `${minutes}分${seconds}秒`;
+}
+
+// 导出配置
+export {
+  CITY_TYPES,
+  PROPERTY_CATEGORIES,
+  REFRESH_INTERVAL,
+  ALL_PROPERTIES,
+  CURRENT_TRADING_PROPERTIES,
+  generateAllProperties,
+  updateAllPropertyPrices,
+  selectTradingProperties,
+  refreshTradingCenter,
+  purchaseProperty,
+  sellProperty,
+  getUserProperties,
+  initializeRealEstate,
+  formatPropertyPrice,
+  formatRemainingTime,
+  startPriceUpdateTimer,
+  stopPriceUpdateTimer,
+  restartPriceUpdateTimer,
+  getTimeUntilNextPriceUpdate,
+  checkPriceUpdate
+}; 
