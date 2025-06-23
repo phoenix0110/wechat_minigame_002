@@ -1,3 +1,5 @@
+import { ANIMATION_TIME_CONFIG } from '../config/timeConfig.js';
+
 /**
  * 对话系统
  * 类似galgame的剧情对话界面
@@ -7,7 +9,7 @@ export default class DialogueSystem {
     this.isActive = false;
     this.currentDialogueIndex = 0;
     this.isTyping = false;
-    this.typingSpeed = 50; // 打字速度 (毫秒)
+    this.typingSpeed = ANIMATION_TIME_CONFIG.DIALOGUE_TYPING_SPEED; // 打字速度（从配置导入）
     this.displayedText = '';
     this.targetText = '';
     this.typingTimer = null;

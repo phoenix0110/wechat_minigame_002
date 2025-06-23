@@ -5,6 +5,7 @@ import {
   calculateRefreshProbabilities,
   calculateRefreshSpeedBonus
 } from '../config/luxuryConfig.js';
+import { LUXURY_TIME_CONFIG } from '../config/timeConfig.js';
 import StoreInfoModal from './storeInfoModal.js';
 
 /**
@@ -54,7 +55,7 @@ export default class LuxuryStorePage {
         price: this.getUnifiedPrice(grade), // 使用统一价格
         cooldownEnd: 0,
         purchaseTime: 0, // 购买时间
-        baseCooldown: 60000, // 基础冷却时间60秒
+        baseCooldown: LUXURY_TIME_CONFIG.BASE_COOLDOWN, // 基础冷却时间（从配置导入）
         isEmpty: false
       });
     }
@@ -69,7 +70,7 @@ export default class LuxuryStorePage {
         price: 0,
         cooldownEnd: 0,
         purchaseTime: 0, // 购买时间
-        baseCooldown: 60000, // 基础冷却时间60秒
+        baseCooldown: LUXURY_TIME_CONFIG.BASE_COOLDOWN, // 基础冷却时间（从配置导入）
         isEmpty: true
       });
     }
@@ -159,9 +160,9 @@ export default class LuxuryStorePage {
 
     const slot = this.productSlots[slotIndex];
     
-    // 购买成功，设置冷却时间（1分钟），应用员工速度加成
+    // 购买成功，设置冷却时间，应用员工速度加成
     const now = Date.now();
-    const baseCooldown = 60000; // 基础冷却时间60秒
+    const baseCooldown = LUXURY_TIME_CONFIG.BASE_COOLDOWN; // 基础冷却时间（从配置导入）
     const speedBonus = calculateRefreshSpeedBonus(this.hiredClerks);
     const actualCooldown = baseCooldown * (1 - speedBonus / 100); // 应用速度缩短
     

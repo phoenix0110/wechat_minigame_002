@@ -90,8 +90,10 @@ const PROPERTY_CATEGORIES = {
   }
 };
 
-// 刷新间隔（10分钟）
-const REFRESH_INTERVAL = 10 * 60 * 1000;
+import { PROPERTY_TIME_CONFIG } from './timeConfig.js';
+
+// 刷新间隔（从时间配置文件导入）
+const REFRESH_INTERVAL = PROPERTY_TIME_CONFIG.PRICE_UPDATE_INTERVAL;
 
 // 全局房产数据池（48套房产）
 let ALL_PROPERTIES = [];
@@ -142,7 +144,12 @@ function generateAllProperties() {
             priceHistory: [{ // 历史价格记录
               timestamp: Date.now(),
               price: totalPrice
-            }]
+            }],
+            // 租金系统相关字段
+            rentAccumulated: 0, // 累积的租金，最大10万
+            lastRentUpdate: null, // 上次租金更新时间
+            rentPerMinute: 5000, // 每分钟租金收入
+            rentCap: 100000 // 租金上限
           });
         }
       });
@@ -158,13 +165,11 @@ function updateAllPropertyPrices() {
   const now = Date.now();
   
   ALL_PROPERTIES.forEach(property => {
-    // 只有未被购买的房产才更新价格
-    if (!property.isPurchased) {
       // 随机涨跌1%-5%
       const changePercent = (Math.random() * 0.04 + 0.01) * (Math.random() > 0.5 ? 1 : -1);
       const newPrice = Math.round(property.currentPrice * (1 + changePercent));
       
-      property.currentPrice = Math.max(newPrice, property.basePrice * 0.5); // 最低不低于基础价格的50%
+      property.currentPrice = Math.max(newPrice, property.basePrice * 0.2); // 最低不低于基础价格的50%
       property.totalPrice = property.currentPrice;
       
       // 更新历史最高价
@@ -179,11 +184,10 @@ function updateAllPropertyPrices() {
       });
       
       // 清理超过1小时的历史记录
-      const oneHourAgo = now - (60 * 60 * 1000);
+      const oneHourAgo = now - PROPERTY_TIME_CONFIG.PRICE_HISTORY_RETENTION;
       property.priceHistory = property.priceHistory.filter(record => 
         record.timestamp >= oneHourAgo
       );
-    }
   });
 }
 
@@ -222,7 +226,7 @@ function startPriceUpdateTimer() {
   lastPriceUpdateTime = now;
   nextPriceUpdateTime = now + REFRESH_INTERVAL;
   
-  // 启动定时器，每分钟检查一次是否需要更新
+  // 启动定时器，根据配置的频率检查是否需要更新
   priceUpdateTimer = setInterval(() => {
     const currentTime = Date.now();
     
@@ -248,7 +252,7 @@ function startPriceUpdateTimer() {
       
       console.log('房产价格更新完成，下次更新时间:', new Date(nextPriceUpdateTime));
     }
-  }, 60000); // 每分钟检查一次
+      }, PROPERTY_TIME_CONFIG.PRICE_CHECK_FREQUENCY); // 根据配置的频率检查
 }
 
 // 停止全局价格更新定时器
@@ -314,6 +318,10 @@ function purchaseProperty(propertyId) {
     property.isPurchased = true;
     property.purchaseTime = Date.now();
     property.purchasePrice = property.currentPrice;
+    
+    // 初始化租金系统
+    property.rentAccumulated = 0;
+    property.lastRentUpdate = Date.now();
     
     // 从当前交易列表中移除
     CURRENT_TRADING_PROPERTIES = CURRENT_TRADING_PROPERTIES.filter(p => p.id !== propertyId);
@@ -401,6 +409,77 @@ function formatRemainingTime(remainingTime) {
   return `${minutes}分${seconds}秒`;
 }
 
+// 更新单个房产的租金累积
+function updatePropertyRent(property) {
+  if (!property.isPurchased || !property.lastRentUpdate) {
+    return;
+  }
+  
+  const now = Date.now();
+  const timeDiff = now - property.lastRentUpdate;
+  const minutesPassed = timeDiff / (60 * 1000); // 转换为分钟
+  
+  // 计算应该增加的租金
+  const rentToAdd = Math.floor(minutesPassed * property.rentPerMinute);
+  
+  if (rentToAdd > 0) {
+    // 增加租金，但不超过上限
+    property.rentAccumulated = Math.min(
+      property.rentAccumulated + rentToAdd, 
+      property.rentCap
+    );
+    
+    // 更新最后更新时间
+    property.lastRentUpdate = now;
+  }
+}
+
+// 更新所有已购买房产的租金
+function updateAllRents() {
+  const userProperties = getUserProperties();
+  userProperties.forEach(updatePropertyRent);
+}
+
+// 收取房产租金
+function collectRent(propertyId) {
+  const property = ALL_PROPERTIES.find(p => p.id === propertyId && p.isPurchased);
+  if (!property) {
+    return null;
+  }
+  
+  // 先更新租金
+  updatePropertyRent(property);
+  
+  // 获取累积的租金
+  const rentAmount = property.rentAccumulated;
+  
+  if (rentAmount > 0) {
+    // 清空累积租金
+    property.rentAccumulated = 0;
+    // 重新开始计时
+    property.lastRentUpdate = Date.now();
+    
+    return {
+      property: property,
+      rentAmount: rentAmount
+    };
+  }
+  
+  return null;
+}
+
+// 获取房产的租金进度（0-1之间的值）
+function getRentProgress(property) {
+  if (!property.isPurchased) {
+    return 0;
+  }
+  
+  // 先更新租金
+  updatePropertyRent(property);
+  
+  return property.rentAccumulated / property.rentCap;
+}
+
 // 导出配置
 export {
   CITY_TYPES,
@@ -422,5 +501,9 @@ export {
   stopPriceUpdateTimer,
   restartPriceUpdateTimer,
   getTimeUntilNextPriceUpdate,
-  checkPriceUpdate
+  checkPriceUpdate,
+  updatePropertyRent,
+  updateAllRents,
+  collectRent,
+  getRentProgress
 }; 

@@ -156,6 +156,25 @@ export default class AssetManager {
   }
 
   /**
+   * 获取当前总资产价值（包括房产当前价值）
+   */
+  getTotalAssetValue() {
+    let totalValue = 0;
+    
+    for (const asset of this.assets.values()) {
+      if (asset.category === '房产' && asset.originalItem && asset.originalItem.currentPrice) {
+        // 房产使用当前市场价格
+        totalValue += asset.originalItem.currentPrice * asset.quantity;
+      } else {
+        // 其他资产使用购买价格
+        totalValue += asset.totalPrice;
+      }
+    }
+    
+    return totalValue;
+  }
+
+  /**
    * 格式化价格显示
    */
   formatPrice(price) {

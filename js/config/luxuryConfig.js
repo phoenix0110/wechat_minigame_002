@@ -18,12 +18,14 @@ export const PRODUCT_GRADES = {
 /**
  * 商品刷新配置
  */
+import { LUXURY_TIME_CONFIG } from './timeConfig.js';
+
 export const REFRESH_CONFIG = {
   TOTAL_SLOTS: 18,           // 总共18个商品位置
   EMPTY_SLOTS: 6,            // 6个空位置
   AVAILABLE_SLOTS: 12,       // 12个可用位置
-  REFRESH_TIME: 60000,       // 刷新时间1分钟（毫秒）
-  COOLDOWN_TIME: 60000       // 冷却时间1分钟（毫秒）
+  REFRESH_TIME: LUXURY_TIME_CONFIG.REFRESH_TIME,       // 刷新时间（从时间配置导入）
+  COOLDOWN_TIME: LUXURY_TIME_CONFIG.COOLDOWN_TIME       // 冷却时间（从时间配置导入）
 };
 
 /**

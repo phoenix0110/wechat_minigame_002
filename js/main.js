@@ -9,12 +9,12 @@ import ClerkResumeModal from './ui/clerkResumeModal'; // 导入进货员简历�
 import ClerkInfoModal from './ui/clerkInfoModal'; // 导入进货员信息弹窗
 import AssetManager from './managers/assetManager'; // 导入资产管理器
 import AssetModal from './ui/assetModal'; // 导入资产列表弹窗
-import { EmployeeStatsGenerator } from './config/employeeStats.js'; // 导入员工数值生成器
 import AudioManager from './managers/audioManager'; // 导入音频管理器
 import { CLERK, DESIGNER } from './config/luxuryConfig.js';
 import DesignerInfoModal from './ui/designerInfoModal';
 import DesignResumeModal from './ui/designResumeModal';
-import { sellProperty, stopPriceUpdateTimer, restartPriceUpdateTimer, formatPropertyPrice, getUserProperties } from './config/realEstateConfig.js';
+import { sellProperty, stopPriceUpdateTimer, restartPriceUpdateTimer, formatPropertyPrice, getUserProperties, collectRent, updateAllRents } from './config/realEstateConfig.js';
+import { PROPERTY_TIME_CONFIG, LOADING_TIME_CONFIG } from './config/timeConfig.js';
 import AssetTracker from './managers/assetTracker';
 
 
@@ -56,6 +56,7 @@ export default class Main {
   
   // 购买通知系统
   purchaseNotifications = []; // 存储购买通知动画
+  rentTimer = null; // 租金更新定时器
 
   constructor() {
     console.log('Main constructor called');
@@ -106,7 +107,7 @@ export default class Main {
         // 开始加载建筑图片
         this.loadBuildingImages();
       }
-    }, 100);
+            }, LOADING_TIME_CONFIG.PROGRESS_UPDATE_INTERVAL);
   }
 
   /**
@@ -182,15 +183,21 @@ export default class Main {
     // 初始化资产追踪器
     this.assetTracker = new AssetTracker();
     
+    // 设置全局引用，让资产追踪器能够访问
+    window.main = this;
+    
     // 初始化售楼处页面，传入资产追踪器
-    this.realEstatePage = new RealEstatePage(this.assetTracker);
+    this.realEstatePage = new RealEstatePage(this.assetTracker, () => this.money);
     
     // 记录初始资产状态
     this.assetTracker.recordAssetValue(this.money, 0);
     
+    // 启动租金更新定时器
+    this.startRentTimer();
+    
     setTimeout(() => {
       this.startIntroDialogue();
-    }, 500); // 稍微延迟一下，让加载完成的提示显示一会儿
+    }, LOADING_TIME_CONFIG.STARTUP_DELAY); // 根据配置的延迟时间
   }
 
   /**
@@ -402,6 +409,24 @@ export default class Main {
         } else if (result.type === 'sell_property') {
           // 处理房产出售
           this.handlePropertySale(result.property, '房产');
+        } else if (result.type === 'collect_rent') {
+          // 处理收取租金
+          this.handleCollectRent(result.property);
+        } else if (result.type === 'upgrade_property') {
+          // 处理房屋升级
+          this.handleUpgradeProperty(result.property);
+        } else if (result.type === 'property_trend') {
+          // 处理房产价格趋势
+          this.handlePropertyTrend(result.property);
+        } else if (result.type === 'navigation') {
+          // 处理导航事件
+          if (result.action === 'home') {
+            // 跳转到首页
+            this.gameView = 'main';
+            this.realEstatePage.hide();
+          } else if (result.action === 'trading') {
+            // 保持在交易页面，已在realEstatePage内部处理
+          }
         }
       }
       // 在售楼处页面内，不处理其他任何交互，直接返回
@@ -721,27 +746,114 @@ export default class Main {
       // 从资产管理器中移除（使用房产对象作为asset参数）
       const assetSaleResult = this.assetManager.sellAsset(property, category);
       
-      if (assetSaleResult) {
-        // 增加玩家金钱
-        this.money += saleResult.sellPrice;
-        
-        // 添加到资产追踪器的交易记录
-        this.assetTracker.addTransaction('sell', property, saleResult.sellPrice, this.money);
-        
-        // 显示出售成功消息
-        this.messageSystem.addMessage(
-          `成功出售 ${property.name}，获得 ${formatPropertyPrice(saleResult.sellPrice)}！`, 
-          'success'
-        );
-        
-        // 添加出售通知动画
-        this.addPurchaseNotification(`出售 ${property.name}`);
-      } else {
-        this.messageSystem.addMessage('出售失败，请重试', 'error');
+      // 无论资产管理器是否成功，都要处理金钱和消息
+      // 因为sellProperty已经成功执行了
+      
+      // 增加玩家金钱
+      this.money += saleResult.sellPrice;
+      
+      // 添加到资产追踪器的交易记录，包含购买价格用于计算盈亏
+      this.assetTracker.addTransaction('sell', property, saleResult.sellPrice, this.money, property.purchasePrice);
+      
+      // 显示出售成功消息
+      this.messageSystem.addMessage(
+        `成功出售 ${property.name}，获得 ${formatPropertyPrice(saleResult.sellPrice)}！`, 
+        'success'
+      );
+      
+      // 添加出售通知动画
+      this.addPurchaseNotification(`出售 ${property.name}`);
+      
+      // 如果资产管理器出售失败，记录警告但不影响用户体验
+      if (!assetSaleResult) {
+        console.warn('资产管理器出售记录失败，但房产已成功出售');
       }
     } else {
       this.messageSystem.addMessage('无法出售此房产', 'error');
     }
+  }
+
+  /**
+   * 处理收取租金
+   */
+  handleCollectRent(property) {
+    // 使用新的租金系统
+    const rentResult = collectRent(property.id);
+    
+    if (rentResult && rentResult.rentAmount > 0) {
+      // 增加金钱
+      this.money += rentResult.rentAmount;
+      
+      // 显示收取租金消息
+      this.messageSystem.addMessage(`从 ${property.name} 收取租金 ${formatPropertyPrice(rentResult.rentAmount)}！`, 'success');
+      
+      // 添加收取租金通知动画
+      this.addPurchaseNotification(`收取租金 ${formatPropertyPrice(rentResult.rentAmount)}`);
+    } else {
+      // 没有租金可收取
+      this.messageSystem.addMessage(`${property.name} 暂无租金可收取`, 'warning');
+    }
+  }
+
+  /**
+   * 处理房屋升级
+   */
+  handleUpgradeProperty(property) {
+    // 计算升级费用（房产价值的20%）
+    const upgradeCost = Math.round(property.currentPrice * 0.2);
+    
+    if (this.money >= upgradeCost) {
+      // 扣除升级费用
+      this.money -= upgradeCost;
+      
+      // 提升房产价值（增加10%）
+      property.currentPrice = Math.round(property.currentPrice * 1.1);
+      property.totalPrice = property.currentPrice;
+      
+      // 更新历史最高价
+      if (property.currentPrice > property.highestPrice) {
+        property.highestPrice = property.currentPrice;
+      }
+      
+      // 显示升级成功消息
+      this.messageSystem.addMessage(`${property.name} 升级成功！价值提升至 ${formatPropertyPrice(property.currentPrice)}`, 'success');
+      
+      // 添加升级通知动画
+      this.addPurchaseNotification(`升级 ${property.name}`);
+    } else {
+      // 金钱不足
+      this.messageSystem.addMessage(`升级 ${property.name} 需要 ${formatPropertyPrice(upgradeCost)}，金钱不足！`, 'error');
+    }
+  }
+
+  /**
+   * 处理房产价格趋势
+   */
+  handlePropertyTrend(property) {
+    // 显示房产价格趋势模态框
+    if (this.realEstatePage && this.realEstatePage.propertyHistoryModal) {
+      this.realEstatePage.propertyHistoryModal.show(canvas.width, canvas.height, property);
+    }
+  }
+
+  /**
+   * 启动租金更新定时器
+   */
+  startRentTimer() {
+    // 根据配置的间隔更新租金
+    this.rentTimer = setInterval(() => {
+      // 直接调用已导入的函数，避免动态导入问题
+      updateAllRents();
+    }, PROPERTY_TIME_CONFIG.RENT_UPDATE_INTERVAL);
+    
+    console.log('租金更新定时器已启动，每分钟更新一次');
+  }
+
+  /**
+   * 获取当前金钱数量（供资产追踪器使用）
+   */
+  getMoneyCallback() {
+    return this.money;
   }
 
   /**
@@ -771,7 +883,7 @@ export default class Main {
       targetY: baseY - 50, // 向上移动40px
       alpha: 1.0,
       startTime: Date.now(),
-      duration: 2000 // 2秒动画
+      duration: ANIMATION_TIME_CONFIG.PURCHASE_NOTIFICATION_DURATION // 购买通知动画持续时间
     };
     
     this.purchaseNotifications.push(notification);
@@ -927,8 +1039,15 @@ export default class Main {
     
     ctx.restore();
     
-    // 绘制金钱数字（放大字体）
-    const text = this.formatMoney(this.money);
+    // 计算总资产（现金 + 房产价值）
+    const userProperties = getUserProperties();
+    const totalPropertyValue = userProperties.reduce((total, property) => {
+      return total + property.currentPrice;
+    }, 0);
+    const totalAssets = this.money + totalPropertyValue;
+    
+    // 绘制总资产数字（放大字体）
+    const text = this.formatMoney(totalAssets);
     const textX = dollarX + 30; // 美元符号右侧
     const textY = buttonY + buttonHeight / 2 + 8;
     
@@ -1172,6 +1291,10 @@ export default class Main {
 
     if (this.gameState === 'loading') {
       this.renderLoadingScreen(ctx);
+    } else if (this.gameState === 'intro') {
+      // 剧情模式 - 显示背景和对话
+      this.renderBackground(ctx); // 绘制背景
+      this.dialogueSystem.render(ctx, canvas.width, canvas.height); // 绘制对话系统
     } else if (this.gameState === 'playing') {
       if (this.gameView === 'luxury') {
         // 奢侈品店页面

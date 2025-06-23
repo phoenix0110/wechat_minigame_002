@@ -1,4 +1,5 @@
 import { formatPropertyPrice } from '../config/realEstateConfig.js';
+import { ASSET_TRACKING_CONFIG } from '../config/timeConfig.js';
 
 /**
  * 资产追踪管理器
@@ -18,11 +19,11 @@ export default class AssetTracker {
     // 上次记录资产价值的时间
     this.lastRecordTime = 0;
     
-    // 记录间隔（1分钟）
-    this.recordInterval = 1 * 60 * 1000;
+    // 记录间隔（从时间配置文件导入）
+    this.recordInterval = ASSET_TRACKING_CONFIG.RECORD_INTERVAL;
     
-    // 初始化第一个资产记录点
-    this.recordAssetValue(0, 0); // 初始资产为0
+    // 启动定时记录
+    this.startPeriodicRecording();
   }
 
   /**
@@ -79,8 +80,9 @@ export default class AssetTracker {
    * @param {object} property 房产信息
    * @param {number} price 交易价格
    * @param {number} currentCash 交易后的现金
+   * @param {number} purchasePrice 购买价格（仅用于卖出时计算盈亏）
    */
-  addTransaction(type, property, price, currentCash) {
+  addTransaction(type, property, price, currentCash, purchasePrice = null) {
     const transaction = {
       id: this.transactionHistory.length + 1,
       timestamp: Date.now(),
@@ -89,7 +91,8 @@ export default class AssetTracker {
       propertyIcon: property.icon,
       price: price,
       currentCash: currentCash,
-      timeFromStart: Date.now() - this.gameStartTime
+      timeFromStart: Date.now() - this.gameStartTime,
+      purchasePrice: purchasePrice // 购买价格，用于计算盈亏
     };
     
     this.transactionHistory.unshift(transaction); // 最新的交易显示在最前面
@@ -103,7 +106,8 @@ export default class AssetTracker {
       类型: type === 'buy' ? '购买' : '出售',
       房产: property.name,
       价格: formatPropertyPrice(price),
-      当前现金: formatPropertyPrice(currentCash)
+      当前现金: formatPropertyPrice(currentCash),
+      购买价格: purchasePrice ? formatPropertyPrice(purchasePrice) : 'N/A'
     });
   }
 
@@ -152,7 +156,7 @@ export default class AssetTracker {
    * @param {number} maxPoints 最大显示点数
    */
   getChartData(maxPoints = 15) {
-    // 计算10分钟前的时间戳
+    // 计算10分钟前的时间戳（用于图表显示）
     const now = Date.now();
     const tenMinutesAgo = now - (10 * 60 * 1000);
     
@@ -184,15 +188,44 @@ export default class AssetTracker {
   }
 
   /**
-   * 清理过期的资产记录（保留最近30分钟的数据）
+   * 启动定时记录
+   */
+  startPeriodicRecording() {
+    // 设置定时器，每分钟记录一次
+    this.recordingTimer = setInterval(() => {
+      // 需要从外部获取当前资产数据
+      if (window.main && window.main.getMoneyCallback && window.main.assetManager) {
+        try {
+          const cash = window.main.getMoneyCallback();
+          const propertyValue = window.main.assetManager.getTotalAssetValue();
+          this.recordAssetValue(cash, propertyValue);
+        } catch (error) {
+          console.error('定时记录资产价值时出错:', error);
+        }
+      }
+    }, this.recordInterval);
+  }
+
+  /**
+   * 停止定时记录
+   */
+  stopPeriodicRecording() {
+    if (this.recordingTimer) {
+      clearInterval(this.recordingTimer);
+      this.recordingTimer = null;
+    }
+  }
+
+  /**
+   * 清理过期的资产记录（保留最近24小时的数据）
    */
   cleanupOldRecords() {
     const now = Date.now();
-    const thirtyMinutes = 30 * 60 * 1000;
+    const retentionPeriod = ASSET_TRACKING_CONFIG.HISTORY_RETENTION;
     
-    // 保留最近30分钟的资产记录
+    // 保留配置时间范围内的资产记录
     this.assetHistory = this.assetHistory.filter(record => 
-      now - record.timestamp <= thirtyMinutes
+      now - record.timestamp <= retentionPeriod
     );
     
     // 至少保留最近的15个记录点
@@ -200,6 +233,8 @@ export default class AssetTracker {
       // 如果记录太少，不进行清理
       return;
     }
+    
+    console.log(`清理过期记录，当前保留 ${this.assetHistory.length} 条记录`);
   }
 
   /**
