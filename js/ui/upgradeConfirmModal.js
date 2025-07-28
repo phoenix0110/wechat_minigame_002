@@ -1,13 +1,13 @@
-// 移除formatPropertyPrice的导入，统一使用formatMoney
 import { drawRoundRect, formatMoney } from './utils.js';
 
 /**
- * 购买确认弹窗 - 按照 Figma 设计 (node-id=80-908)
+ * 房屋升级确认弹窗 - 参考购买确认弹窗的设计 (node-id=80-908)
  */
-export default class PurchaseConfirmModal {
+export default class UpgradeConfirmModal {
   constructor() {
     this.isVisible = false;
     this.property = null;
+    this.upgradeCost = 0;
     this.onConfirm = null;
     this.onCancel = null;
   }
@@ -18,6 +18,8 @@ export default class PurchaseConfirmModal {
   show(property, onConfirm = null, onCancel = null) {
     this.isVisible = true;
     this.property = property;
+    // 计算升级费用：房产实时价格的10分之1
+    this.upgradeCost = Math.round(property.currentPrice * 0.1);
     this.onConfirm = onConfirm;
     this.onCancel = onCancel;
   }
@@ -28,6 +30,7 @@ export default class PurchaseConfirmModal {
   hide() {
     this.isVisible = false;
     this.property = null;
+    this.upgradeCost = 0;
     this.onConfirm = null;
     this.onCancel = null;
   }
@@ -55,15 +58,15 @@ export default class PurchaseConfirmModal {
     const confirmButtonX = modalX + 20;
     const confirmButtonY = modalY + 118;
     const confirmButtonWidth = 120;
-    const confirmButtonHeight = 48; // 14px padding + text + 14px padding
+    const confirmButtonHeight = 48;
     
     if (x >= confirmButtonX && x <= confirmButtonX + confirmButtonWidth &&
         y >= confirmButtonY && y <= confirmButtonY + confirmButtonHeight) {
       // 保存property引用，避免在hide()中被清空
       const propertyToReturn = this.property;
+      const costToReturn = this.upgradeCost;
       this.hide();
-      if (this.onConfirm) this.onConfirm(propertyToReturn);
-      return { type: 'confirm', property: propertyToReturn };
+      return { type: 'confirm', property: propertyToReturn, upgradeCost: costToReturn };
     }
 
     // 取消按钮：位置 (150, 118)，尺寸 120x48px
@@ -81,11 +84,6 @@ export default class PurchaseConfirmModal {
 
     return null;
   }
-
-  /**
-   * 绘制圆角矩形辅助方法
-   */
-  // 移除本地的drawRoundRect函数，使用utils中的版本
 
   /**
    * 渲染弹窗
@@ -132,7 +130,7 @@ export default class PurchaseConfirmModal {
     ctx.font = '400 15px "Noto Sans", Inter';
     ctx.textAlign = 'center';
     
-    const confirmText = `你是否愿意投资${formatMoney(this.property.currentPrice)}购买这处房产？`;
+    const confirmText = `你是否愿意花费${formatMoney(this.upgradeCost)}升级这处房产？`;
     ctx.fillText(confirmText, textX + textWidth / 2, textY + 20);
 
     // 确认按钮 - 位置 (20, 118)，尺寸 120x48px，绿色背景

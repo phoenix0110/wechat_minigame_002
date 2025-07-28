@@ -1,6 +1,18 @@
 import { SCREEN_WIDTH, SCREEN_HEIGHT } from '../render';
 
-const atlas = wx.createImage();
+// 兼容微信小程序和浏览器环境
+let atlas;
+if (typeof wx !== 'undefined' && wx.createImage) {
+  // 微信小程序环境
+  atlas = wx.createImage();
+} else if (typeof Image !== 'undefined') {
+  // 浏览器环境
+  atlas = new Image();
+} else {
+  // 如果都不可用，创建空对象避免错误
+  atlas = { complete: false, src: '' };
+}
+
 atlas.src = 'images/Common.png';
 
 export default class GameInfo {

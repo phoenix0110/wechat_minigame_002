@@ -1,21 +1,23 @@
 import './render'; // 初始化Canvas
 import GameInfo from './runtime/gameinfo'; // 导入游戏UI类
-import BuildingManager from './buildings/buildingManager'; // 导入建筑管理器
 import MessageSystem from './ui/messageSystem'; // 导入消息系统
-import LuxuryStorePage from './ui/luxuryStorePage'; // 导入奢侈品商店页面
 import RealEstatePage from './ui/realEstatePage'; // 导入售楼处页面
-import DialogueSystem from './ui/dialogue'; // 导入对话系统
-import ClerkResumeModal from './ui/clerkResumeModal'; // 导入进货员简历弹窗
-import ClerkInfoModal from './ui/clerkInfoModal'; // 导入进货员信息弹窗
+import WorldPage from './ui/worldPage'; // 导入世界页面
+import RankingPage from './ui/rankingPage'; // 导入排名页面
+import BusinessPage from './ui/businessPage'; // 导入经营页面
 import AssetManager from './managers/assetManager'; // 导入资产管理器
-import AssetModal from './ui/assetModal'; // 导入资产列表弹窗
-import AudioManager from './managers/audioManager'; // 导入音频管理器
-import { CLERK, DESIGNER } from './config/luxuryConfig.js';
-import DesignerInfoModal from './ui/designerInfoModal';
-import DesignResumeModal from './ui/designResumeModal';
-import { sellProperty, stopPriceUpdateTimer, restartPriceUpdateTimer, formatPropertyPrice, getUserProperties, collectRent, updateAllRents } from './config/realEstateConfig.js';
-import { PROPERTY_TIME_CONFIG, LOADING_TIME_CONFIG } from './config/timeConfig.js';
+import RankingManager from './managers/rankingManager'; // 导入排名管理器
+import UpgradeConfirmModal from './ui/upgradeConfirmModal'; // 导入房屋升级确认弹窗
+import AdRewardModal from './ui/adRewardModal.js'; // 导入广告奖励弹窗
+import TutorialModal from './ui/tutorialModal.js'; // 导入教学对话框
+import DailyNewsModal from './ui/dailyNewsModal.js'; // 导入每日新闻弹窗
+import GameCalendar from './ui/gameCalendar.js'; // 导入游戏日历组件
+import GameDataAdapter from './managers/gameDataAdapter'; // 导入游戏数据适配器
+import GameTimeManager from './managers/gameTimeManager'; // 导入游戏时间管理器
+import { sellProperty, collectRent, updateAllRents, refreshTradingPropertyList, setGameDataAdapter, initializeRealEstate, setGameTimeManager } from './config/realEstateConfig.js';
+import { PROPERTY_TIME_CONFIG, LOADING_TIME_CONFIG, ANIMATION_TIME_CONFIG } from './config/timeConfig.js';
 import AssetTracker from './managers/assetTracker';
+import { formatMoney } from './ui/utils.js';
 
 
 const ctx = canvas.getContext('2d'); // 获取canvas的2D绘图上下文
@@ -24,152 +26,244 @@ const ctx = canvas.getContext('2d'); // 获取canvas的2D绘图上下文
  * 游戏主函数
  */
 export default class Main {
-  aniId = 0; // 用于存储动画帧的ID
-  gameInfo = new GameInfo(); // 创建游戏UI显示
-  buildingManager = new BuildingManager(); // 建筑管理器
-  messageSystem = new MessageSystem(); // 消息系统
-  luxuryStorePage = new LuxuryStorePage(); // 奢侈品商店页面
-  gameView = 'main'; // 游戏视图: 'main'(主界面), 'luxury'(奢侈品店), 'realEstate'(售楼处)
-  realEstatePage = null; // 售楼处页面，稍后初始化
-  dialogueSystem = new DialogueSystem(); // 对话系统
-  clerkResumeModal = new ClerkResumeModal(); // 进货员简历弹窗
-  clerkInfoModal = new ClerkInfoModal(); // 进货员信息弹窗
-  assetManager = new AssetManager(); // 资产管理器
-  assetModal = new AssetModal(this.assetManager); // 资产列表弹窗
-  audioManager = new AudioManager(); // 音频管理器
-  designerInfoModal = new DesignerInfoModal();
-  designResumeModal = new DesignResumeModal();
-  assetTracker = null; // 资产追踪器，稍后初始化
-
-  gameState = 'loading'; // 游戏状态: 'loading'(加载中), 'intro'(剧情), 'playing'(游戏中)
-  loadingProgress = 0; // 加载进度
-  money = 10000000000; // 初始资金100亿元
-  gridCols = 2; // 每行2个建筑
-  gridRows = 2; // 总共2行
-  cellSize = 160; // 每个格子的大小，适当放大
-  gridStartX = 0; // 网格起始X坐标
-  gridStartY = 0; // 网格起始Y坐标
-  backgroundImage = null; // 背景图片
-  buildingImages = {}; // 建筑图标图片缓存
-  buildingImagesLoaded = 0; // 已加载的建筑图片数量
-  currentClerkSlot = -1; // 当前选择的进货员位置
-  
-  // 购买通知系统
-  purchaseNotifications = []; // 存储购买通知动画
-  rentTimer = null; // 租金更新定时器
-
   constructor() {
-    console.log('Main constructor called');
-    console.log('Canvas size:', canvas.width, 'x', canvas.height);
-    console.log('wx object available:', !!wx);
-    
-    // 计算2x3网格居中位置
-    this.gridStartX = (canvas.width - this.gridCols * this.cellSize) / 2;
-    this.gridStartY = (canvas.height - this.gridRows * this.cellSize) / 2 + 20;
-
-    console.log('Grid position:', this.gridStartX, this.gridStartY);
-
-    // 绑定触摸事件
-    this.bindTouchEvents();
-    
-    // 监听页面隐藏事件，停止定时器以节省资源
-    if (typeof wx !== 'undefined') {
-      wx.onHide(() => {
-        console.log('游戏进入后台，停止房产价格更新定时器');
-        stopPriceUpdateTimer();
-      });
+    // 初始化属性
+    this.aniId = 0; // 用于存储动画帧的ID
+    this.gameView = 'world'; // 游戏视图: 默认进入世界界面
+    this.realEstatePage = null; // 售楼处页面，稍后初始化
+    this.worldPage = null; // 世界页面，稍后初始化
+    this.rankingPage = null; // 排名页面，稍后初始化
+    this.businessPage = null; // 经营页面，稍后初始化
+    this.gameState = 'loading'; // 游戏状态: 'loading'(加载中), 'playing'(游戏中)
+    this.loadingProgress = 0; // 加载进度
+    this.money = 5000000; // 初始资金500万
+    this.backgroundImage = null; // 背景图片（用于加载页面）
+    this.purchaseNotifications = []; // 存储购买通知动画
+    this.rentTimer = null; // 租金更新定时器
+    try {
+      // 初始化组件
+      this.gameInfo = new GameInfo(); // 创建游戏UI显示
+      this.messageSystem = new MessageSystem(); // 消息系统
+      this.assetManager = new AssetManager(); // 资产管理器
+      this.rankingManager = new RankingManager(); // 排名管理器
+      this.upgradeConfirmModal = new UpgradeConfirmModal(); // 房屋升级确认弹窗
+      this.adRewardModal = new AdRewardModal(); // 广告奖励弹窗
+      this.tutorialModal = new TutorialModal(); // 教学对话框
+      this.gameDataAdapter = new GameDataAdapter(); // 游戏数据适配器
+      this.gameTimeManager = new GameTimeManager(); // 游戏时间管理器
+      this.gameCalendar = new GameCalendar(this.gameTimeManager); // 游戏日历组件
+      this.dailyNewsModal = new DailyNewsModal(this.rankingManager); // 每日新闻弹窗
+      this.assetTracker = new AssetTracker(
+        () => this.money, // 获取当前金钱的回调
+        () => this.assetManager // 获取资产管理器的回调
+      ); // 资产追踪器
       
-      wx.onShow(() => {
-        console.log('游戏回到前台，重新启动房产价格更新定时器');
-        // 重新启动房产价格更新定时器
-        restartPriceUpdateTimer();
-      });
+      // 设置日历的日期变更回调
+      this.gameCalendar.setDayChangeCallback(this.onDayChange.bind(this));
+      
+      // 初始化游戏数据适配器并设置组件引用
+      this.initializeDataAdapter();
+
+      // 设置游戏时间管理器到房产配置
+      setGameTimeManager(this.gameTimeManager);
+      
+      // 设置游戏时间管理器为全局变量，供UI组件访问
+      // 在微信小程序中使用 GameGlobal 而不是 window
+      if (typeof window !== 'undefined') {
+        window.gameTimeManager = this.gameTimeManager;
+      } else {
+        // 微信小程序环境
+        GameGlobal.gameTimeManager = this.gameTimeManager;
+      }
+
+      // 加载游戏数据和设置
+      this.loadGameData();
+
+      // 绑定触摸事件
+      this.bindTouchEvents();
+      
+      // 开始游戏
+      this.start();
+      
+      // 模拟加载进度
+      this.simulateLoading();
+      
+    } catch (error) {
+      console.error('Main构造函数执行失败:', error);
+      throw error;
     }
-    
-    // 开始游戏
-    this.start();
-    
-    // 模拟加载进度
-    this.simulateLoading();
   }
 
+  /**
+   * 初始化游戏数据适配器
+   */
+  initializeDataAdapter() {
+    // 设置游戏数据适配器的组件引用
+    this.gameDataAdapter.setComponents({
+      assetManager: this.assetManager,
+      assetTracker: this.assetTracker,
+      rankingManager: this.rankingManager,
+      gameTimeManager: this.gameTimeManager
+    });
+    
+    // 设置初始游戏状态
+    this.gameDataAdapter.setGameState(this.money);
+    
+    // 设置为房产配置的数据源
+    setGameDataAdapter(this.gameDataAdapter);
+  }
+
+  async saveGameData() {
+    try {
+      // 同步当前金钱状态到数据适配器
+      this.gameDataAdapter.setMoney(this.money);
+      
+      // 使用新的存储系统保存数据
+      const success = await this.gameDataAdapter.saveGameData();
+      
+      return success;
+    } catch (error) {
+      console.error('保存游戏数据时发生错误:', error);
+      return false;
+    }
+  }
+
+  loadGameData() {
+    try {
+      
+      // 使用新的存储系统加载数据
+      const success = this.gameDataAdapter.loadGameData();
+      
+      if (success) {
+        // 从数据适配器获取恢复的金钱
+        this.money = this.gameDataAdapter.getMoney();
+        
+        // 检查是否首次用户
+        if (this.gameDataAdapter.isFirstTimeUser()) {
+          this.shouldShowTutorial = true;
+        }
+        
+      } else {
+        console.log('游戏数据加载失败或使用默认设置');
+        this.money = 5000000; // 默认资金
+        this.shouldShowTutorial = true; // 首次用户显示教学
+      }
+      
+      return success;
+      
+    } catch (error) {
+      console.error('加载游戏数据时发生错误:', error);
+      this.money = 5000000; // 错误时使用默认值
+      this.shouldShowTutorial = true;
+      return false;
+    }
+  }
+
+  /**
+   * 检查是否首次进入游戏
+   */
+  checkFirstTimeUser() {
+    try {
+      // 使用新的存储系统检查首次用户
+      if (this.shouldShowTutorial || this.gameDataAdapter.isFirstTimeUser()) {
+        // 首次进入，显示教学对话框
+        this.showTutorial();
+      }
+    } catch (error) {
+      console.error('检查首次用户状态失败:', error);
+    }
+  }
+
+  /**
+   * 显示教学对话框
+   */
+  showTutorial() {
+    this.tutorialModal.show(
+      canvas.width, 
+      canvas.height,
+      () => {
+        // 教学完成回调
+        this.markUserAsPlayed();
+      }
+    );
+  }
+
+  /**
+   * 标记用户已经玩过游戏
+   */
+  markUserAsPlayed() {
+    try {
+      // 标记不再显示教学
+      this.shouldShowTutorial = false;
+    } catch (error) {
+      console.error('标记用户状态失败:', error);
+    }
+  }
+
+
+  /**
+   * 记录当前资产状态（在数据完全恢复后调用）
+   */
+  recordCurrentAssetState() {
+    try {
+      // 计算当前房产总价值
+      const userProperties = this.gameDataAdapter.getUserProperties();
+      const totalPropertyValue = userProperties.reduce((total, property) => {
+        return total + (property.currentPrice || property.totalPrice || 0);
+      }, 0);
+      
+      // 记录当前资产状态
+      if (this.assetTracker) {
+        this.assetTracker.recordAssetValue(this.money, totalPropertyValue);
+      }
+    } catch (error) {
+      console.error('记录资产状态失败:', error);
+    }
+  }
   /**
    * 模拟加载进度
    */
   simulateLoading() {
     const loadingInterval = setInterval(() => {
-      if (this.loadingProgress < 30) {
+      if (this.loadingProgress < 60) {
         this.loadingProgress += Math.random() * 10 + 5;
       }
       
-      if (this.loadingProgress >= 30) {
+      if (this.loadingProgress >= 60) {
         clearInterval(loadingInterval);
-        // 开始加载建筑图片
-        this.loadBuildingImages();
+        // 开始加载背景图片
+        this.loadBackgroundImage();
       }
-            }, LOADING_TIME_CONFIG.PROGRESS_UPDATE_INTERVAL);
-  }
-
-  /**
-   * 加载建筑图片
-   */
-  loadBuildingImages() {
-    const buildings = this.buildingManager.getAllBuildings();
-    const totalImages = buildings.length + 1; // 建筑图片 + 背景图片
-    let loadedImages = 0;
-    
-    // 加载建筑图片
-    buildings.forEach((building, index) => {
-      const img = wx.createImage();
-      img.src = building.icon;
-      
-      img.onload = () => {
-        this.buildingImages[building.id] = img;
-        loadedImages++;
-        this.loadingProgress = 30 + (loadedImages / totalImages) * 60; // 30-90%
-  
-        if (loadedImages === totalImages) {
-          this.finishLoading();
-        }
-      };
-      
-      img.onerror = () => {
-        console.error(`Failed to load building image: ${building.name}`);
-        // 创建一个占位图片
-        this.buildingImages[building.id] = null;
-        loadedImages++;
-        this.loadingProgress = 30 + (loadedImages / totalImages) * 60;
-        
-        if (loadedImages === totalImages) {
-          this.finishLoading();
-        }
-      };
-    });
-
-    // 加载背景图片
-    this.loadBackgroundImage(totalImages, () => {
-      loadedImages++;
-      this.loadingProgress = 30 + (loadedImages / totalImages) * 60;
-      
-      if (loadedImages === totalImages) {
-        this.finishLoading();
-      }
-    });
+    }, LOADING_TIME_CONFIG.PROGRESS_UPDATE_INTERVAL);
   }
 
   /**
    * 加载背景图片
    */
-  loadBackgroundImage(totalImages = 1, callback = null) {
-    // 在微信小游戏中使用 wx.createImage()
-    this.backgroundImage = wx.createImage();
+  loadBackgroundImage() {
+    // 兼容微信小程序和浏览器环境
+    if (typeof wx !== 'undefined' && wx.createImage) {
+      // 微信小程序环境
+      this.backgroundImage = wx.createImage();
+    } else if (typeof Image !== 'undefined') {
+      // 浏览器环境
+      this.backgroundImage = new Image();
+    } else {
+      // 如果都不可用，直接完成加载
+      this.loadingProgress = 100;
+      this.finishLoading();
+      return;
+    }
+    
     this.backgroundImage.src = 'images/image_building_1.png';
     this.backgroundImage.onload = () => {
-      if (callback) callback();
+      this.loadingProgress = 100;
+      this.finishLoading();
     };
     this.backgroundImage.onerror = () => {
       console.error('背景图片加载失败');
-      if (callback) callback();
+      this.loadingProgress = 100;
+      this.finishLoading();
     };
   }
 
@@ -177,26 +271,43 @@ export default class Main {
    * 完成加载，开始游戏
    */
   finishLoading() {
-    console.log('Loading finished, starting intro...');
     this.loadingProgress = 100;
+
     
-    // 初始化资产追踪器
-    this.assetTracker = new AssetTracker();
-    
-    // 设置全局引用，让资产追踪器能够访问
-    window.main = this;
-    
-    // 初始化售楼处页面，传入资产追踪器
+    // 初始化页面组件，传入资产追踪器
     this.realEstatePage = new RealEstatePage(this.assetTracker, () => this.money);
+    this.worldPage = new WorldPage(() => this.money, () => this.gameDataAdapter.getUserProperties());
+    this.rankingPage = new RankingPage(() => this.money, this.rankingManager);
+          this.businessPage = new BusinessPage(() => this.money, this.gameDataAdapter.getAchievementManager());
+      
+      // 设置成就奖励领取回调
+      this.businessPage.setClaimRewardCallback((reward) => {
+        this.handleAchievementReward(reward);
+      });
     
-    // 记录初始资产状态
-    this.assetTracker.recordAssetValue(this.money, 0);
+    
+    // 确保房产数据正确初始化（在页面组件创建后调用，避免覆盖已正确生成的交易列表）
+    initializeRealEstate();
+    
+    // 同步数据适配器的当前金钱状态
+    this.gameDataAdapter.setMoney(this.money);
+    
+    // 最后记录当前资产状态（在所有数据恢复完成后）
+    setTimeout(() => {
+      this.recordCurrentAssetState();
+
+    }, 100); // 延迟一点确保所有数据完全恢复
     
     // 启动租金更新定时器
     this.startRentTimer();
     
     setTimeout(() => {
-      this.startIntroDialogue();
+      // 直接进入游戏，显示世界界面
+      this.gameState = 'playing';
+      this.worldPage.show();
+      
+      // 检查是否首次进入游戏
+      this.checkFirstTimeUser();
     }, LOADING_TIME_CONFIG.STARTUP_DELAY); // 根据配置的延迟时间
   }
 
@@ -227,6 +338,13 @@ export default class Main {
       this.touchStartY = y;
       this.isTouching = true;
       
+      // 处理页面特定的触摸开始事件
+      if (this.gameView === 'business' && this.businessPage) {
+        this.businessPage.handleTouch(x, y, 'start');
+      } else if (this.gameView === 'world' && this.worldPage) {
+        this.worldPage.handleDragStart(x, y);
+      }
+      
       this.handleTouch(x, y);
     }
   }
@@ -234,542 +352,262 @@ export default class Main {
   onTouchMove(e) {
     if (this.isTouching && e.touches && e.touches.length > 0) {
       const touch = e.touches[0];
+      const currentX = touch.clientX;
       const currentY = touch.clientY;
-      const deltaY = this.touchStartY - currentY;
       
-      // 只在售楼处页面处理滚动
-      if (this.gameView === 'realEstate' && this.realEstatePage.isVisible) {
+      if (this.gameView === 'realEstate' && this.realEstatePage && this.realEstatePage.isVisible) {
+        // 售楼处页面处理滚动
+        const deltaY = this.touchStartY - currentY;
         this.handleScroll(deltaY * 2); // 增加滚动敏感度
         this.touchStartY = currentY; // 更新起始位置，实现连续滚动
+      } else if (this.gameView === 'ranking' && this.rankingPage && this.rankingPage.isVisible) {
+        // 排名页面处理滚动
+        const deltaY = this.touchStartY - currentY;
+        this.rankingPage.handleScroll(deltaY * 2); // 增加滚动敏感度
+        this.touchStartY = currentY; // 更新起始位置，实现连续滚动
+      } else if (this.gameView === 'business' && this.businessPage && this.businessPage.isVisible) {
+        // 经营页面处理滚动
+        this.businessPage.handleTouch(currentX, currentY, 'move');
+
+      } else if (this.gameView === 'world' && this.worldPage && this.worldPage.isVisible) {
+        // 世界页面处理地图拖拽
+        this.worldPage.handleDragMove(currentX, currentY);
       }
     }
   }
 
   onTouchEnd(e) {
     this.isTouching = false;
+    
+    // 结束拖拽 - 添加空值检查
+    if (this.gameView === 'world' && this.worldPage && this.worldPage.isVisible) {
+      this.worldPage.handleDragEnd();
+    } else if (this.gameView === 'business' && this.businessPage && this.businessPage.isVisible) {
+      this.businessPage.handleTouch(0, 0, 'end');
+    }
   }
 
   /**
    * 处理触摸事件
    */
   handleTouch(x, y) {
-    // 调试：记录所有触摸事件
-    console.log('触摸事件:', {
-      x, y,
-      gameState: this.gameState,
-      gameView: this.gameView,
-      clerkResumeVisible: this.clerkResumeModal.isVisible,
-      clerkInfoVisible: this.clerkInfoModal.isVisible,
-      currentClerkSlot: this.currentClerkSlot
-    });
-
-    // 如果在剧情模式，优先处理对话事件
-    if (this.gameState === 'intro') {
-      const handled = this.dialogueSystem.handleClick(x, y, canvas.width, canvas.height);
-      if (handled) return;
-    }
-
-    // 如果不在游戏模式，不处理其他交互
     if (this.gameState !== 'playing') return;
 
-    // 处理奢侈品店页面
-    if (this.gameView === 'luxury') {
-      // 优先处理弹窗（如果有弹窗打开，只处理弹窗交互）
-      if (this.clerkResumeModal.isVisible) {
-        const result = this.clerkResumeModal.handleTouch(x, y);
-        if (result) {
-          if (result.type === 'hire') {
-            this.handleEmployeeHire(result.resume);
-          } else if (result.type === 'close') {
-            this.currentClerkSlot = -1; // 关闭弹窗时重置状态
-          }
-        }
-        return; // 有弹窗时不处理其他交互
+    // 最高优先级：处理教学对话框
+    if (this.tutorialModal.isVisible) {
+      const tutorialResult = this.tutorialModal.handleTouch(x, y);
+      if (tutorialResult) {
+        return;
       }
+    }
 
-      if (this.clerkInfoModal.isVisible) {
-        const result = this.clerkInfoModal.handleTouch(x, y);
-        if (result) {
-          if (result.type === 'fire') {
-            this.clerkInfoModal.hide();
-            this.handleEmployeeFire(result.clerkSlot);
-          } else if (result.type === 'close') {
-            this.currentClerkSlot = -1; // 关闭弹窗时重置状态
-          }
-        }
-        return; // 有弹窗时不处理其他交互
+    // 处理每日新闻弹窗（最高优先级）
+    if (this.dailyNewsModal.isVisible) {
+      const newsResult = this.dailyNewsModal.handleTouch(x, y);
+      if (newsResult) {
+        // 新闻弹窗已处理，不继续处理其他事件
+        return;
       }
+    }
 
-      // 优先处理弹窗（如果有弹窗打开，只处理弹窗交互）
-      if (this.designResumeModal.isVisible) {
-        const result = this.designResumeModal.handleTouch(x, y);
-        if (result) {
-          if (result.type === 'hire') {
-            this.handleEmployeeHire(result.resume);
-          } else if (result.type === 'close') {
-            this.currentClerkSlot = -1; // 关闭弹窗时重置状态
-          }
-        }
-        return; // 有弹窗时不处理其他交互
-      }
-
-      if (this.designerInfoModal.isVisible) {
-        const result = this.designerInfoModal.handleTouch(x, y);
-        if (result) {
-          if (result.type === 'fire') {
-            // 先关闭弹窗
-            this.designerInfoModal.hide();
-            // 然后解雇设计师
-            this.handleEmployeeFire(result.designerSlot);
-          } else if (result.type === 'close') {
-            this.designerInfoModal.hide();
-            this.currentClerkSlot = -1;
-          }
-          return;
-        }
-      }      
-
-      // 处理奢侈品店页面本身的交互
-      const result = this.luxuryStorePage.handleTouch(x, y);
-      if (result) {
-        if (result.type === 'back') {
-          this.gameView = 'main';
-          this.luxuryStorePage.hide();
-        } else if (result.type === 'purchase') {
-          this.handleLuxuryPurchase(result);
-        } else if (result.type === 'cooldown') {
-          this.messageSystem.addMessage(`商品冷却中，剩余${result.remainingTime}秒`, 'warning');
-        } else if (result.type === 'empty_slot') {
-          this.messageSystem.addMessage('此位置暂无商品', 'info');
-        } else if (result.type === 'clerk_slot') {
-          this.currentClerkSlot = result.slotIndex;
-          if (result.hasClerk) {
-            // 显示进货员信息弹窗
-            this.clerkInfoModal.show(canvas.width, canvas.height, this.luxuryStorePage.hiredClerks[result.slotIndex], result.slotIndex);
-          } else {
-            // 显示进货员招聘弹窗
-            const baseClerk = this.luxuryStorePage.stockClerks[this.currentClerkSlot];
-            this.clerkResumeModal.show(canvas.width, canvas.height, this.currentClerkSlot + 1, baseClerk.price);
-          }
-        } else if (result.type === 'designer_slot') {
-          this.currentClerkSlot = 3 + result.slotIndex; // 设计师位置标记为3+索引（3,4,5）
-          if (result.hasDesigner) {
-            // 显示设计师信息弹窗
-            this.designerInfoModal.show(canvas.width, canvas.height, this.luxuryStorePage.hiredDesigners[result.slotIndex], this.currentClerkSlot);
-          } else {
-            // 显示设计师招聘弹窗
-            this.designResumeModal.show(canvas.width, canvas.height, 4, this.luxuryStorePage.designer.price);
-          }
-        } else if (result.type === 'store_info') {
-          // 显示店铺信息弹窗
-          const storeData = {
-            hiredClerks: this.luxuryStorePage.hiredClerks,
-            hiredDesigners: this.luxuryStorePage.hiredDesigners,
-            productStats: this.luxuryStorePage.getProductStats()
-          };
-          this.luxuryStorePage.storeInfoModal.show(canvas.width, canvas.height, storeData);
+    // 处理广告奖励弹窗（高优先级，完全阻止其他交互）
+    if (this.adRewardModal.isVisible) {
+      const adResult = this.adRewardModal.handleTouch(x, y);
+      if (adResult) {
+        if (adResult.type === 'confirm') {
+          // 用户确认观看广告，给予奖励
+          this.money += adResult.amount;
+          this.messageSystem.addMessage(`成功收获 ${formatMoney(adResult.amount)}`, 'success');
+          this.saveGameData();
         }
       }
       return;
     }
 
-    // 处理售楼处页面
-    if (this.gameView === 'realEstate') {
-      const result = this.realEstatePage.handleTouch(x, y);
-      if (result) {
-        if (result.type === 'close') {
-          this.gameView = 'main';
-          this.realEstatePage.hide();
-        } else if (result.type === 'purchase') {
-          // 处理房产购买
-          const property = result.option;
-          if (this.money >= property.totalPrice) {
-            // 扣除金钱
-            this.money -= property.totalPrice;
-            
-            // 购买房产
-            const purchasedProperty = this.realEstatePage.buyProperty(property.id);
-            if (purchasedProperty) {
-              // 记录到资产管理器
-              this.assetManager.addAsset(purchasedProperty, '房产', purchasedProperty.totalPrice);
-              
-              // 添加到资产追踪器的交易记录
-              this.assetTracker.addTransaction('buy', purchasedProperty, purchasedProperty.totalPrice, this.money);
-              
-              // 显示购买成功消息
-              this.messageSystem.addMessage(`成功购买 ${purchasedProperty.name}！`, 'success');
-              
-              // 添加购买通知动画
-              this.addPurchaseNotification(`购买 ${purchasedProperty.name}`);
-            }
-          } else {
-            // 金钱不足
-            this.messageSystem.addMessage('金钱不足，无法购买此房产！', 'error');
-          }
-        } else if (result.type === 'sell_property') {
-          // 处理房产出售
-          this.handlePropertySale(result.property, '房产');
-        } else if (result.type === 'collect_rent') {
-          // 处理收取租金
-          this.handleCollectRent(result.property);
-        } else if (result.type === 'upgrade_property') {
-          // 处理房屋升级
-          this.handleUpgradeProperty(result.property);
-        } else if (result.type === 'property_trend') {
-          // 处理房产价格趋势
-          this.handlePropertyTrend(result.property);
-        } else if (result.type === 'navigation') {
-          // 处理导航事件
-          if (result.action === 'home') {
-            // 跳转到首页
-            this.gameView = 'main';
-            this.realEstatePage.hide();
-          } else if (result.action === 'trading') {
-            // 保持在交易页面，已在realEstatePage内部处理
-          }
-        }
-      }
-      // 在售楼处页面内，不处理其他任何交互，直接返回
-      return;
-    }
-
-    // 处理进货员简历弹窗（仅在主页面时）
-    if (this.gameView === 'main' && this.clerkResumeModal.isVisible) {
-      const result = this.clerkResumeModal.handleTouch(x, y);
-      if (result) {
-        if (result.type === 'hire') {
-          this.handleEmployeeHire(result.resume);
-        } else if (result.type === 'close') {
-          this.clerkResumeModal.hide();
-          this.currentClerkSlot = -1;
-        }
+    // 优先处理资金不足弹窗
+    if (this.messageSystem.hasActiveModal()) {
+      const modalResult = this.messageSystem.handleModalTouch(x, y);
+      if (modalResult) {
+        // 弹窗已处理，不继续处理其他事件
         return;
       }
     }
 
-    // 处理进货员信息弹窗（仅在主页面时）
-    if (this.gameView === 'main' && this.clerkInfoModal.isVisible) {
-      const result = this.clerkInfoModal.handleTouch(x, y);
-      if (result) {
-        if (result.type === 'fire') {
-          this.clerkInfoModal.hide();
-          this.handleEmployeeFire(result.clerkSlot);
-        } else if (result.type === 'close') {
-          this.clerkInfoModal.hide();
-          this.currentClerkSlot = -1;
+    // 优先处理升级确认弹窗 - 防止被其他元素遮挡
+    if (this.upgradeConfirmModal.isVisible) {
+      const upgradeResult = this.upgradeConfirmModal.handleTouch(x, y);
+      if (upgradeResult) {
+        // 处理升级确认弹窗的结果
+        if (upgradeResult.type === 'confirm') {
+          // 执行升级操作
+          this.executeUpgrade(upgradeResult.property, upgradeResult.upgradeCost);
         }
         return;
       }
     }
-
-    // 处理设计师简历弹窗（仅在主页面时）
-    if (this.gameView === 'main' && this.designResumeModal.isVisible) {
-      const result = this.designResumeModal.handleTouch(x, y);
-      if (result) {
-        if (result.type === 'hire') {
-          this.handleEmployeeHire(result.resume);
-        } else if (result.type === 'close') {
-          this.designResumeModal.hide();
-          this.currentClerkSlot = -1;
+    
+    // 处理日历触摸事件 - 在页面处理之前
+    if (this.gameCalendar) {
+      const calendarResult = this.gameCalendar.handleTouch(x, y);
+      if (calendarResult) {
+        // 可以在这里处理日历点击事件
+        if (calendarResult.type === 'calendar_click') {
+          // 例如：显示详细时间信息，或者什么都不做
         }
         return;
       }
     }
-
-    // 处理设计师信息弹窗（仅在主页面时）
-    if (this.gameView === 'main' && this.designerInfoModal.isVisible) {
-      const result = this.designerInfoModal.handleTouch(x, y);
-      if (result) {
-        if (result.type === 'fire') {
-          this.designerInfoModal.hide();
-          this.handleEmployeeFire(result.designerSlot);
-        } else if (result.type === 'close') {
-          this.designerInfoModal.hide();
-          this.currentClerkSlot = -1;
-        }
+    let result = null;
+    
+    // 根据当前游戏视图处理触摸事件 - 添加空值检查
+    if (this.gameView === 'world' && this.worldPage) {
+      result = this.worldPage.handleTouch(x, y);
+    } else if (this.gameView === 'realEstate' && this.realEstatePage) {
+      result = this.realEstatePage.handleTouch(x, y);
+    } else if (this.gameView === 'ranking' && this.rankingPage) {
+      result = this.rankingPage.handleTouch(x, y);
+          } else if (this.gameView === 'business' && this.businessPage) {
+        result = this.businessPage.handleTouch(x, y);
+      }
+    
+    if (result) {
+      // 处理导航切换
+      if (result.type === 'navigation') {
+        this.switchView(result.tab);
         return;
       }
-    }
-
-    // 处理资产列表弹窗
-    if (this.assetModal.isVisible) {
-      const result = this.assetModal.handleTouch(x, y);
-      if (result) {
-        return;
-      }
-    }
-
-    // 只有在主界面时才处理建筑点击和资产按钮点击
-    if (this.gameView !== 'main') {
-      return; // 不在主界面时不处理任何点击
-    }
-
-    // 检查是否点击了资产按钮（在主界面且没有弹窗时）
-    if (this.assetButtonX !== undefined && 
-        x >= this.assetButtonX && x <= this.assetButtonX + this.assetButtonWidth &&
-        y >= this.assetButtonY && y <= this.assetButtonY + this.assetButtonHeight) {
-      // 显示资产列表弹窗
-      this.assetModal.show(canvas.width, canvas.height);
-      return;
-    }
-
-    // 检查是否有任何弹窗打开，如果有则不处理9宫格点击
-    if (this.clerkResumeModal.isVisible || 
-        this.clerkInfoModal.isVisible || 
-        this.assetModal.isVisible ||
-        this.designResumeModal.isVisible ||
-        this.designerInfoModal.isVisible) {
-      return; // 有弹窗时不处理9宫格点击
-    }
-
-    // 检查是否点击了2x3网格中的某个建筑
-    const col = Math.floor((x - this.gridStartX) / this.cellSize);
-    const row = Math.floor((y - this.gridStartY) / this.cellSize);
-    
-    if (col >= 0 && col < this.gridCols && row >= 0 && row < this.gridRows) {
-      const index = row * this.gridCols + col;
-      const buildings = this.buildingManager.getAllBuildings();
-      if (index < buildings.length) {
-        this.onBuildingClick(index);
-      }
-    }
-  }
-
-  /**
-   * 建筑点击事件
-   */
-  onBuildingClick(index) {
-    const buildings = this.buildingManager.getAllBuildings();
-    const building = buildings[index];
-    
-    // 特殊建筑打开弹窗或页面
-    if (building.name === '奢侈品店') {
-      this.gameView = 'luxury';
-      this.luxuryStorePage.show();
-      return;
-    }
-    
-    if (building.name === '售楼处') {
-      this.gameView = 'realEstate';
-      this.realEstatePage.show();
-      return;
-    }
-    
-    this.lastClickTime = Date.now();
-    
-    // 其他建筑使用默认逻辑
-    const result = this.buildingManager.interactWithBuilding(index, this.money);
-    
-    if (result && result.success) {
-      this.money -= result.cost;
       
-      // 记录到资产管理器
-      const purchaseItem = {
-        id: building.id,
-        name: result.purchasedItem || building.name,
-        price: result.cost
-      };
-      this.assetManager.addAsset(purchaseItem, building.name, result.cost);
-      
-      // 添加购买通知动画
-      this.addPurchaseNotification(result.purchasedItem || building.name);
-      
-      // 检查是否花光了钱
-      if (this.money <= 0) {
-        this.messageSystem.addMessage('你成功了，终于花光了100亿！！', 'success');
+      // 处理返回事件（点击返回箭头）
+      if (result.type === 'close') {
+        this.switchView('world');
+        return;
       }
-    } else if (result) {
-      this.messageSystem.addMessage(result.message, 'warning');
-    }
-  }
-
-  /**
-   * 处理奢侈品购买
-   */
-  handleLuxuryPurchase(purchaseData) {
-    if (!purchaseData || !purchaseData.item) return;
-    
-    const { slotIndex, item } = purchaseData;
-    
-    // 从奢侈品店页面购买商品
-    const result = this.luxuryStorePage.purchaseItem(slotIndex);
-    
-    if (result.success) {
-      // 检查是否有足够的资金
-      if (this.money >= result.price) {
-        this.money -= result.price;
+      
+      if (result.type === 'purchase_property') {
+        // 处理房产购买
+        const purchaseResult = this.realEstatePage.buyProperty(result.property.id, this.money);
         
-        this.addPurchaseNotification(result.item.name);
-        this.messageSystem.addMessage(`购买了 ${result.grade}级 ${result.item.name}！`, 'success');
-        
-        // 添加到资产管理器
-        this.assetManager.addAsset({
-          id: Date.now(),
-          name: result.item.name,
-          type: 'luxury',
-          category: result.item.type,
-          grade: result.grade,
-          price: result.price
-        }, '奢侈品店', result.price);
-        
-        // 检查是否花光了钱
-        if (this.money <= 0) {
-          this.messageSystem.addMessage('恭喜！你成功花光了所有的钱！', 'success');
+        if (purchaseResult.success) {
+          // 调用统一的购买成功处理方法
+          this.handlePurchaseSuccess(purchaseResult.property);
+        } else {
+          console.log('房产购买失败:', purchaseResult ? purchaseResult.error : '未知错误');
+          
+          // 检查是否是资金不足的错误
+          const errorMsg = purchaseResult ? purchaseResult.error : '购买失败';
+          if (errorMsg.includes('资金不足') || errorMsg === '等挣了更多的钱再来买吧！') {
+            // 资金不足时显示弹窗确认
+            this.showInsufficientFundsModal(
+              result.property, 
+              purchaseResult.requiredAmount || result.property.currentPrice || 0, 
+              purchaseResult.currentMoney || this.money
+            );
+          } else {
+            // 其他错误直接显示消息
+            this.messageSystem.addMessage(errorMsg, 'error');
+          }
         }
-      } else {
-        this.messageSystem.addMessage('余额不足，无法购买此商品', 'warning');
-      }
-    } else {
-      // 根据失败原因显示不同消息
-      switch (result.reason) {
-        case 'no_product':
-          this.messageSystem.addMessage('此位置暂无商品', 'info');
-          break;
-        case 'cooldown':
-          this.messageSystem.addMessage(`商品冷却中，剩余${result.remainingTime}秒`, 'warning');
-          break;
-        case 'invalid_slot':
-          this.messageSystem.addMessage('无效的商品位置', 'error');
-          break;
-        default:
-          this.messageSystem.addMessage('购买失败！', 'error');
-          break;
-      }
-    }
-  }
-
-  /**
-   * 重置所有弹窗和交互状态
-   */
-  resetAllModalStates() {
-    console.log('重置前状态:', {
-      clerkResumeVisible: this.clerkResumeModal.isVisible,
-      clerkInfoVisible: this.clerkInfoModal.isVisible,
-      currentClerkSlot: this.currentClerkSlot
-    });
-    
-    this.clerkResumeModal.hide();
-    this.clerkInfoModal.hide();
-    this.designResumeModal.hide();
-    this.designerInfoModal.hide();
-    this.currentClerkSlot = -1;
-    
-    // 重置奢侈品店页面的内部弹窗状态
-    if (this.luxuryStorePage.storeInfoModal) {
-      this.luxuryStorePage.storeInfoModal.hide();
-    }
-    
-    console.log('重置后状态:', {
-      clerkResumeVisible: this.clerkResumeModal.isVisible,
-      clerkInfoVisible: this.clerkInfoModal.isVisible,
-      currentClerkSlot: this.currentClerkSlot
-    });
-  }
-
-  /**
-   * 处理员工招聘
-   */
-  handleEmployeeHire(resume) {
-    // 简历弹窗已经生成了完整的员工对象，直接使用
-    const employee = resume;
-    const basePrice = employee.salary;
-    
-    if (this.money >= basePrice) {
-      this.money -= basePrice;
-      
-      // 判断是设计师还是进货员
-      const isDesigner = this.currentClerkSlot >= 3;
-      const slotIndex = isDesigner ? this.currentClerkSlot - 3 : this.currentClerkSlot;
-      
-      // 根据类型调用相应的招聘方法
-      if (isDesigner) {
-        this.luxuryStorePage.hireDesigner(slotIndex, employee);
-      } else {
-        this.luxuryStorePage.hireClerk(slotIndex, employee);
-      }
-      
-      // 关闭弹窗并重置状态
-      if (isDesigner) {
-        this.designResumeModal.hide();
-      } else {
-        this.clerkResumeModal.hide();
-      }
-      this.currentClerkSlot = -1;
-      
-      console.log(`招聘了${isDesigner ? '设计师' : '进货员'}${employee.name}，剩余金额：${this.formatMoney(this.money)}`);
-      console.log('员工能力:', employee.abilities);
-      
-      // 检查是否花光了钱
-      if (this.money <= 0) {
-        this.messageSystem.addMessage('恭喜！你成功花光了所有的钱！', 'success');
-      }
-    } else {
-      this.messageSystem.addMessage('余额不足，无法招聘员工！', 'error');
-    }
-  }
-
-  /**
-   * 处理员工解雇
-   */
-  handleEmployeeFire(slotIndex) {
-    const isDesigner = slotIndex >= 3;
-    const actualSlotIndex = isDesigner ? slotIndex - 3 : slotIndex;
-    
-    if (isDesigner) {
-      const hiredDesigner = this.luxuryStorePage.hiredDesigners[actualSlotIndex];
-      if (hiredDesigner) {
-        this.luxuryStorePage.fireDesigner(actualSlotIndex);
-        this.messageSystem.addMessage(`已解雇设计师${hiredDesigner.name}`, 'info');
-        console.log(`解雇了设计师${hiredDesigner.name}`);
-      }
-    } else {
-      const hiredClerk = this.luxuryStorePage.hiredClerks[actualSlotIndex];
-      if (hiredClerk) {
-        this.luxuryStorePage.fireClerk(actualSlotIndex);
-        this.messageSystem.addMessage(`已解雇进货员${hiredClerk.name}`, 'info');
-        console.log(`解雇了进货员${hiredClerk.name}`);
+      } else if (result.type === 'purchase_success') {
+        // 处理购买成功（来自确认弹窗）
+        this.handlePurchaseSuccess(result.property);
+      } else if (result.type === 'purchase_failed') {
+        // 处理购买失败 - 显示资金不足弹窗
+        const purchaseResult = result.purchaseResult;
+        
+        if (purchaseResult && purchaseResult.error === '等挣了更多的钱再来买吧！') {
+          // 资金不足，显示弹窗
+          this.showInsufficientFundsModal(
+            result.property, 
+            purchaseResult.requiredAmount || result.property.currentPrice || 0, 
+            purchaseResult.currentMoney || this.money
+          );
+        } else {
+          // 其他错误，显示消息
+          const errorMsg = purchaseResult ? purchaseResult.error : '购买失败';
+          this.messageSystem.addMessage(errorMsg, 'error');
+        }
+      } else if (result.type === 'sell_property') {
+        // 处理房产出售
+        this.handlePropertySale(result.property);
+      } else if (result.type === 'collect_rent') {
+        // 处理收取租金
+        this.handleCollectRent(result.property);
+      } else if (result.type === 'upgrade_property') {
+        // 处理房屋升级
+        this.handleUpgradeProperty(result.property);
+      } else if (result.type === 'property_trend') {
+        // 处理房产价格趋势
+        this.handlePropertyTrend(result.property);
+      } else if (result.type === 'map_interaction') {
+        // 处理地图交互（开始拖拽）
+        if (this.gameView === 'world' && this.worldPage) {
+          this.worldPage.handleDragStart(result.x, result.y);
+        }
+      } else if (result.type === 'showAdReward') {
+        // 显示广告奖励弹窗
+        this.adRewardModal.show(
+          canvas.width, 
+          canvas.height,
+          (amount) => {
+            // 确认观看广告的回调
+            console.log('用户选择观看广告，奖励金额:', amount);
+          },
+          () => {
+            // 取消观看广告的回调
+            console.log('用户取消观看广告');
+          }
+        );
       }
     }
-    
-    // 重置状态
-    this.currentClerkSlot = -1;
   }
 
   /**
    * 处理房产出售
    */
-  handlePropertySale(property, category) {
+  handlePropertySale(property) {
     // 使用已导入的房产出售函数
     const saleResult = sellProperty(property.id);
     
-    if (saleResult) {
-      // 从资产管理器中移除（使用房产对象作为asset参数）
-      const assetSaleResult = this.assetManager.sellAsset(property, category);
+    if (saleResult && saleResult.success) {
+      const originalMoney = this.money;
       
-      // 无论资产管理器是否成功，都要处理金钱和消息
-      // 因为sellProperty已经成功执行了
+      // 从资产管理器中移除
+      const assetSaleResult = this.assetManager.sellAsset(property);
       
-      // 增加玩家金钱
       this.money += saleResult.sellPrice;
       
+      console.log('房产出售成功:', {
+        房产: property.name,
+        出售价格: formatMoney(saleResult.sellPrice),
+        原金钱: formatMoney(originalMoney),
+        新金钱: formatMoney(this.money),
+        资产管理器更新: assetSaleResult ? '成功' : '失败'
+      });
+      
       // 添加到资产追踪器的交易记录，包含购买价格用于计算盈亏
-      this.assetTracker.addTransaction('sell', property, saleResult.sellPrice, this.money, property.purchasePrice);
+      this.assetTracker.addTransaction('sell', saleResult.property, saleResult.sellPrice, this.money, saleResult.property.purchasePrice);
       
       // 显示出售成功消息
       this.messageSystem.addMessage(
-        `成功出售 ${property.name}，获得 ${formatPropertyPrice(saleResult.sellPrice)}！`, 
+        `成功出售 ${property.name}，获得 ${formatMoney(saleResult.sellPrice)}！`, 
         'success'
       );
       
       // 添加出售通知动画
       this.addPurchaseNotification(`出售 ${property.name}`);
       
+      // 保存游戏数据
+      this.saveGameData();
+      
       // 如果资产管理器出售失败，记录警告但不影响用户体验
       if (!assetSaleResult) {
         console.warn('资产管理器出售记录失败，但房产已成功出售');
       }
     } else {
-      this.messageSystem.addMessage('无法出售此房产', 'error');
+      // 出售失败，显示错误信息
+      const errorMsg = saleResult && saleResult.error ? saleResult.error : '无法出售此房产';
+      console.log('房产出售失败:', errorMsg);
+      this.messageSystem.addMessage(errorMsg, 'error');
     }
   }
 
@@ -777,53 +615,89 @@ export default class Main {
    * 处理收取租金
    */
   handleCollectRent(property) {
-    // 使用新的租金系统
-    const rentResult = collectRent(property.id);
-    
-    if (rentResult && rentResult.rentAmount > 0) {
+    const result = collectRent(property.id);
+    if (result) {
       // 增加金钱
-      this.money += rentResult.rentAmount;
+      this.money += result.rentAmount;
       
-      // 显示收取租金消息
-      this.messageSystem.addMessage(`从 ${property.name} 收取租金 ${formatPropertyPrice(rentResult.rentAmount)}！`, 'success');
+      // 更新成就统计
+      this.gameDataAdapter.collectRent(result.rentAmount);
       
-      // 添加收取租金通知动画
-      this.addPurchaseNotification(`收取租金 ${formatPropertyPrice(rentResult.rentAmount)}`);
+      // 注意：根据需求，租金收入不记录到交易记录中，只保留房产买卖记录
+      
+      // 显示收取成功消息
+      this.messageSystem.addMessage(`收取 ${property.name} 租金 ${formatMoney(result.rentAmount)}`, 'success');
+      
+      // 保存游戏数据
+      this.saveGameData();
     } else {
       // 没有租金可收取
       this.messageSystem.addMessage(`${property.name} 暂无租金可收取`, 'warning');
     }
   }
 
+    /**
+   * 处理成就奖励
+   */
+  handleAchievementReward(reward) {
+    // 发放奖励金钱
+    this.money += reward;
+    
+    // 显示奖励通知
+    this.messageSystem.addMessage(`🎉 成就奖励: ${formatMoney(reward)}`, 'success');
+    
+    // 自动保存游戏数据
+    this.saveGameData();
+  }
+
   /**
    * 处理房屋升级
    */
   handleUpgradeProperty(property) {
-    // 计算升级费用（房产价值的20%）
-    const upgradeCost = Math.round(property.currentPrice * 0.2);
+    // 计算升级费用（当前房价的10%）
+    const upgradeCost = Math.round(property.currentPrice * 0.1);
     
-    if (this.money >= upgradeCost) {
-      // 扣除升级费用
-      this.money -= upgradeCost;
-      
-      // 提升房产价值（增加10%）
-      property.currentPrice = Math.round(property.currentPrice * 1.1);
-      property.totalPrice = property.currentPrice;
-      
-      // 更新历史最高价
-      if (property.currentPrice > property.highestPrice) {
-        property.highestPrice = property.currentPrice;
-      }
-      
-      // 显示升级成功消息
-      this.messageSystem.addMessage(`${property.name} 升级成功！价值提升至 ${formatPropertyPrice(property.currentPrice)}`, 'success');
-      
-      // 添加升级通知动画
-      this.addPurchaseNotification(`升级 ${property.name}`);
-    } else {
-      // 金钱不足
-      this.messageSystem.addMessage(`升级 ${property.name} 需要 ${formatPropertyPrice(upgradeCost)}，金钱不足！`, 'error');
+    // 检查资金是否足够
+    if (this.money < upgradeCost) {
+      this.messageSystem.addMessage('资金不足，无法升级', 'error');
+      return;
     }
+    
+    // 显示升级确认弹窗
+    this.upgradeConfirmModal.show(
+      property,
+      upgradeCost,
+      this.money,
+      () => {
+        // 确认升级回调
+        this.executeUpgrade(property, upgradeCost);
+      },
+      canvas.width,
+      canvas.height
+    );
+  }
+
+  /**
+   * 执行实际的房屋升级操作
+   */
+  executeUpgrade(property, upgradeCost) {
+    // 扣除升级费用
+    this.money -= upgradeCost;
+    
+    // 房屋升级后租金增长10%，但房屋价格不变
+    property.monthlyRent = Math.round(property.monthlyRent * 1.1);
+    
+    // 更新成就统计
+    this.gameDataAdapter.upgradeProperty();
+    
+    // 显示升级成功消息
+    this.messageSystem.addMessage(`${property.name} 升级成功！月租金提升至 ${formatMoney(property.monthlyRent)}`, 'success');
+    
+    // 添加升级通知动画
+    this.addPurchaseNotification(`升级 ${property.name}`);
+    
+    // 保存游戏数据
+    this.saveGameData();
   }
 
   /**
@@ -845,8 +719,6 @@ export default class Main {
       // 直接调用已导入的函数，避免动态导入问题
       updateAllRents();
     }, PROPERTY_TIME_CONFIG.RENT_UPDATE_INTERVAL);
-    
-    console.log('租金更新定时器已启动，每分钟更新一次');
   }
 
   /**
@@ -857,12 +729,44 @@ export default class Main {
   }
 
   /**
-   * 格式化金钱显示
+   * 切换游戏视图
    */
-  formatMoney(amount) {
-    // 会计形式显示，保留所有0
-    return amount.toLocaleString('en-US');
+  switchView(viewName) {    
+    // 隐藏当前视图
+    if (this.gameView === 'world' && this.worldPage) {
+      this.worldPage.hide();
+    } else if (this.gameView === 'realEstate' && this.realEstatePage) {
+      this.realEstatePage.hide();
+    } else if (this.gameView === 'ranking' && this.rankingPage) {
+      this.rankingPage.hide();
+    } else if (this.gameView === 'business' && this.businessPage) {
+      this.businessPage.hide();
+    }
+    
+    // 切换到新视图
+    this.gameView = viewName;
+    
+    if (viewName === 'world') {
+      if (this.worldPage) {
+        this.worldPage.show();
+      }
+    } else if (viewName === 'trading' || viewName === 'realEstate') {
+      this.gameView = 'realEstate';
+      if (this.realEstatePage) {
+        this.realEstatePage.show();
+      }
+    } else if (viewName === 'ranking') {
+      if (this.rankingPage) {
+        this.rankingPage.show();
+      }
+    } else if (viewName === 'business') {
+      if (this.businessPage) {
+        this.businessPage.show();
+      }
+    }
   }
+
+  // 移除本地的formatMoney函数，使用utils中的版本
 
   /**
    * 添加购买通知动画
@@ -940,321 +844,62 @@ export default class Main {
     cancelAnimationFrame(this.aniId); // 清除上一局的动画
     
     // 开始加载资源
-    console.log('Game start called, beginning loading...');
     this.gameState = 'loading';
-    this.loadingProgress = 0;
-    
-    // 初始化并开始播放背景音乐
-    this.audioManager.init();
-    this.audioManager.setBgMusicVolume(0); // 设置音量为50%
-    this.audioManager.startBgMusic();
-    
+    this.loadingProgress = 0;  
     this.aniId = requestAnimationFrame(this.loop.bind(this)); // 开始新的动画循环
   }
 
   /**
-   * 开始新手剧情对话
+   * canvas重绘函数
+   * 每一帧重新绘制所有的需要展示的元素
    */
-  startIntroDialogue() {
-    try {
-      // 检查是否是首次进入游戏
-      const hasSeenIntro = wx.getStorageSync('hasSeenIntro');
+  render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // 清空画布
+
+    if (this.gameState === 'loading') {
+      this.renderLoadingScreen(ctx);
+    } else if (this.gameState === 'playing') {
+      // 根据当前视图渲染对应页面 - 添加空值检查
+      if (this.gameView === 'world' && this.worldPage) {
+        this.worldPage.render(ctx);
+      } else if (this.gameView === 'realEstate' && this.realEstatePage) {
+        this.realEstatePage.render(ctx);
+      } else if (this.gameView === 'ranking' && this.rankingPage) {
+        this.rankingPage.render(ctx);
+              } else if (this.gameView === 'business' && this.businessPage) {
+          this.businessPage.render(ctx);
+        }
       
-      if (!hasSeenIntro) {
-        // 首次进入，播放剧情
-        console.log('First time user, showing intro');
-        this.gameState = 'intro';
-        this.dialogueSystem.start(canvas.height, () => {
-          // 剧情结束后进入游戏
-          this.gameState = 'playing';
-          
-          // 标记已看过剧情
-          try {
-            wx.setStorageSync('hasSeenIntro', true);
-          } catch (error) {
-            console.error('Failed to save intro status:', error);
-          }
-        });
-      } else {
-        // 非首次进入，直接开始游戏
-        this.gameState = 'playing';
+      // 绘制游戏日历（只在经营页和交易页显示）
+      if (this.gameView === 'business' || this.gameView === 'realEstate') {
+        this.gameCalendar.render(ctx);
       }
-    } catch (error) {
-      console.error('Storage error, defaulting to show intro:', error);
-      // 如果存储出错，默认显示剧情
-      this.gameState = 'intro';
-      this.dialogueSystem.start(canvas.height, () => {
-        this.gameState = 'playing';
-      });
+      
+      // 绘制消息系统和通知
+      this.messageSystem.render(ctx, canvas.width);
+      this.renderPurchaseNotifications(ctx);
+
+      // 绘制升级确认弹窗
+      this.upgradeConfirmModal.render(ctx);
+      
+      // 绘制广告奖励弹窗
+      this.adRewardModal.render(ctx);
+      
+      // 绘制每日新闻弹窗（优先级仅次于教学对话框）
+      this.dailyNewsModal.render(ctx);
+      
+      // 绘制教学对话框（最后渲染，确保在最上层）
+      this.tutorialModal.render(ctx);
     }
   }
 
   /**
-   * 绘制金钱余额和资产按钮
+   * 渲染加载页面
    */
-  renderMoney(ctx) {
-    ctx.save();
-    
-    // 计算显示位置，确保顶部对齐
-    const baseY = 100; // 基准Y位置
-    const buttonWidth = 220; // 金钱按钮宽度，增加以适应更大字体
-    const buttonHeight = 45; // 按钮高度稍微增加
-    const spacing = 10; // 按钮间距
-    const totalWidth = buttonWidth + 120 + spacing; // 金钱按钮 + 资产按钮 + 间距
-    const moneyButtonX = canvas.width / 2 - totalWidth / 2; // 金钱按钮位置
-    const assetButtonX = moneyButtonX + buttonWidth + spacing; // 资产按钮位置
-    
-    // 绘制金钱按钮
-    this.renderMoneyButton(ctx, moneyButtonX, baseY, buttonWidth, buttonHeight);
-    
-    // 绘制资产列表按钮
-    this.renderAssetButton(ctx, assetButtonX, baseY);
-    
-    ctx.restore();
-  }
-
-  /**
-   * 绘制金钱按钮
-   */
-  renderMoneyButton(ctx, buttonX, buttonY, buttonWidth, buttonHeight) {
-    // 完全透明的背景，直接绘制内容
-    
-    // 绘制美元符号（无闪光效果）
-    const dollarSize = 28;
-    const dollarX = buttonX + 10;
-    const dollarY = buttonY + buttonHeight / 2;
-    
-    ctx.save();
-    
-    // 金色美元符号
-    ctx.fillStyle = '#FFD700'; // 金色
-    ctx.font = 'bold 28px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('$', dollarX, dollarY + 8);
-    
-    // 金色描边
-    ctx.strokeStyle = '#B8860B';
-    ctx.lineWidth = 1;
-    ctx.strokeText('$', dollarX, dollarY + 8);
-    
-    ctx.restore();
-    
-    // 计算总资产（现金 + 房产价值）
-    const userProperties = getUserProperties();
-    const totalPropertyValue = userProperties.reduce((total, property) => {
-      return total + property.currentPrice;
-    }, 0);
-    const totalAssets = this.money + totalPropertyValue;
-    
-    // 绘制总资产数字（放大字体）
-    const text = this.formatMoney(totalAssets);
-    const textX = dollarX + 30; // 美元符号右侧
-    const textY = buttonY + buttonHeight / 2 + 8;
-    
-    ctx.fillStyle = '#27AE60'; // 美元绿色
-    ctx.font = 'bold 22px Arial'; // 从16px增加到22px
-    ctx.textAlign = 'left';
-    ctx.fillText(text, textX, textY);
-    
-    // 为数字添加轻微阴影效果
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 1;
-    ctx.shadowBlur = 2;
-  }
-
-  /**
-   * 绘制资产列表按钮
-   */
-  renderAssetButton(ctx, buttonX, baseY) {
-    const buttonWidth = 120;
-    const buttonHeight = 40;
-    const buttonY = baseY;
-    
-    // 保存按钮位置用于点击检测
-    this.assetButtonX = buttonX;
-    this.assetButtonY = buttonY;
-    this.assetButtonWidth = buttonWidth;
-    this.assetButtonHeight = buttonHeight;
-    
-    // 绘制立体阴影效果
-    ctx.save();
-    
-    // 底层阴影（更深）
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-    ctx.shadowOffsetX = 4;
-    ctx.shadowOffsetY = 4;
-    ctx.shadowBlur = 8;
-    
-    // 主按钮背景 - 金色渐变
-    const gradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonHeight);
-    gradient.addColorStop(0, '#FFD700'); // 金色顶部
-    gradient.addColorStop(0.5, '#FFA500'); // 橙金色中间
-    gradient.addColorStop(1, '#DAA520'); // 深金色底部
-    ctx.fillStyle = gradient;
-    ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-    
-    ctx.restore();
-    
-    // 绘制高光效果
-    const highlightGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonHeight / 3);
-    highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-    highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = highlightGradient;
-    ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight / 3);
-    
-    // 绘制按钮边框 - 多层边框效果
-    ctx.strokeStyle = '#B8860B'; // 深金色边框
-    ctx.lineWidth = 3;
-    ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
-    
-    // 内层边框
-    ctx.strokeStyle = '#FFFF80'; // 浅金色内边框
-    ctx.lineWidth = 1;
-    ctx.strokeRect(buttonX + 2, buttonY + 2, buttonWidth - 4, buttonHeight - 4);
-    
-    // 闪光动画效果
-    const time = Date.now() * 0.003;
-    const shimmer = Math.sin(time) * 0.3 + 0.7;
-    ctx.save();
-    ctx.globalAlpha = shimmer;
-    
-    // 闪光条纹
-    const shimmerGradient = ctx.createLinearGradient(
-      buttonX - 20, buttonY - 20, 
-      buttonX + buttonWidth + 20, buttonY + buttonHeight + 20
-    );
-    shimmerGradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
-    shimmerGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.8)');
-    shimmerGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    
-    ctx.fillStyle = shimmerGradient;
-    ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-    
-    ctx.restore();
-    
-    // 绘制按钮文字
-    ctx.fillStyle = '#2C3E50'; // 深色文字确保可读性
-    ctx.font = 'bold 16px Arial'; // 与余额文字大小一致
-    ctx.textAlign = 'center';
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 1;
-    ctx.shadowBlur = 2;
-    
-    // 获取资产统计
-    const stats = this.assetManager.getStats();
-    const buttonText = `资产列表(${stats.totalAssets})`;
-    
-    ctx.fillText(buttonText, buttonX + buttonWidth / 2, buttonY + buttonHeight / 2 + 6);
-    
-    // 为文字添加轻微的金色描边
-    ctx.strokeStyle = '#DAA520';
-    ctx.lineWidth = 0.5;
-    ctx.strokeText(buttonText, buttonX + buttonWidth / 2, buttonY + buttonHeight / 2 + 6);
-  }
-
-  /**
-   * 绘制2x3网格建筑
-   */
-  renderBuildings(ctx) {
-    ctx.save();
-    
-    const buildings = this.buildingManager.getAllBuildings();
-    for (let i = 0; i < buildings.length; i++) {
-      const row = Math.floor(i / this.gridCols);
-      const col = i % this.gridCols;
-      const x = this.gridStartX + col * this.cellSize;
-      const y = this.gridStartY + row * this.cellSize;
-      const building = buildings[i];
-      
-      // 绘制按钮立体效果
-      const buttonPadding = 6;
-      const buttonX = x + buttonPadding;
-      const buttonY = y + buttonPadding;
-      const buttonSize = this.cellSize - buttonPadding * 2;
-      
-      // 绘制按钮阴影（立体效果）
-      ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
-      ctx.shadowOffsetX = 3;
-      ctx.shadowOffsetY = 3;
-      ctx.shadowBlur = 8;
-      
-      // 绘制按钮背景（渐变效果）
-      const gradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonSize);
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-      gradient.addColorStop(1, 'rgba(255, 255, 255, 0.7)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(buttonX, buttonY, buttonSize, buttonSize);
-      
-      ctx.restore();
-      
-      // 绘制按钮边框（双重边框效果）
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(buttonX, buttonY, buttonSize, buttonSize);
-      
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(buttonX + 1, buttonY + 1, buttonSize - 2, buttonSize - 2);
-      
-      // 绘制建筑图标（占满整个按钮区域）
-      const buildingImg = this.buildingImages[building.id];
-      if (buildingImg) {
-        // 图标区域，留出底部文字空间
-        const imgPadding = 4;
-        const imgSize = buttonSize - imgPadding * 2;
-        const imgX = buttonX + imgPadding;
-        const imgY = buttonY + imgPadding;
-        const imgHeight = imgSize - 25; // 为文字留出25px空间
-        
-        // 绘制图片
-        ctx.save();
-        ctx.drawImage(buildingImg, imgX, imgY, imgSize, imgHeight);
-        ctx.restore();
-      } else {
-        // 如果图片没有加载，显示占位符
-        ctx.fillStyle = '#BDC3C7';
-        ctx.font = '32px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('?', x + this.cellSize / 2, y + this.cellSize / 2 - 10);
-      }
-      
-      // 绘制建筑名称，使用更柔和的阴影
-      ctx.font = 'bold 12px Arial';
-      ctx.fillStyle = '#2C3E50';
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.lineWidth = 1;
-      ctx.textAlign = 'center';
-      
-      // 添加轻微的文字阴影
-      ctx.save();
-      ctx.shadowColor = 'rgba(255, 255, 255, 0.65)';
-      ctx.shadowOffsetX = 1;
-      ctx.shadowOffsetY = 1;
-      ctx.shadowBlur = 2;
-      
-      const nameY = buttonY + buttonSize - 8;
-      ctx.strokeText(building.name, x + this.cellSize / 2, nameY);
-      ctx.fillText(building.name, x + this.cellSize / 2, nameY);
-      
-      ctx.restore();
-    }
-    
-    ctx.restore();
-  }
-
-  /**
-   * 绘制背景
-   */
-  renderBackground(ctx) {
-    // 如果背景图片已加载，则使用背景图片
+  renderLoadingScreen(ctx) {
+    // 如果背景图片已加载，则使用原首页背景图片
     if (this.backgroundImage) {
       ctx.save();
-      
-      // 设置透明度
-      ctx.globalAlpha = 0.7;
       
       // 计算背景图片的缩放比例，保持比例并填满屏幕
       const scaleX = canvas.width / this.backgroundImage.width;
@@ -1270,6 +915,10 @@ export default class Main {
       
       ctx.drawImage(this.backgroundImage, x, y, newWidth, newHeight);
       
+      // 添加半透明遮罩让文字更清楚
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
       ctx.restore();
     } else {
       // 备用渐变背景
@@ -1280,90 +929,6 @@ export default class Main {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-  }
-
-  /**
-   * canvas重绘函数
-   * 每一帧重新绘制所有的需要展示的元素
-   */
-  render() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // 清空画布
-
-    if (this.gameState === 'loading') {
-      this.renderLoadingScreen(ctx);
-    } else if (this.gameState === 'intro') {
-      // 剧情模式 - 显示背景和对话
-      this.renderBackground(ctx); // 绘制背景
-      this.dialogueSystem.render(ctx, canvas.width, canvas.height); // 绘制对话系统
-    } else if (this.gameState === 'playing') {
-      if (this.gameView === 'luxury') {
-        // 奢侈品店页面
-        this.luxuryStorePage.render(ctx);
-        
-        // 绘制弹窗
-        this.clerkResumeModal.render(ctx);
-        this.clerkInfoModal.render(ctx);
-        
-        // 绘制消息系统和通知
-        this.messageSystem.render(ctx, canvas.width);
-        this.renderPurchaseNotifications(ctx);
-      } else if (this.gameView === 'realEstate') {
-        // 售楼处页面
-        this.realEstatePage.render(ctx);
-        
-        // 绘制消息系统和通知
-        this.messageSystem.render(ctx, canvas.width);
-        this.renderPurchaseNotifications(ctx);
-      } else {
-        // 主界面
-        this.renderBackground(ctx); // 绘制背景
-        this.renderMoney(ctx); // 绘制金钱余额
-        this.renderBuildings(ctx); // 绘制九宫格建筑
-        
-        // 只在游戏模式下显示消息提示
-        if (this.gameState === 'playing') {
-          this.messageSystem.render(ctx, canvas.width); // 绘制消息提示
-          this.renderPurchaseNotifications(ctx); // 绘制购买通知动画
-        }
-        
-        // 绘制弹窗（在最上层）
-        if (this.gameState === 'playing') {
-          this.clerkResumeModal.render(ctx);
-          this.clerkInfoModal.render(ctx);
-          this.assetModal.render(ctx);
-        }
-      }
-      
-      // 绘制对话系统（最上层）
-      this.dialogueSystem.render(ctx, canvas.width, canvas.height);
-    }
-
-    // 渲染弹窗
-    if (this.clerkInfoModal.isVisible) {
-      this.clerkInfoModal.render(ctx);
-    }
-    if (this.clerkResumeModal.isVisible) {
-      this.clerkResumeModal.render(ctx);
-    }
-    if (this.designerInfoModal.isVisible) {
-      this.designerInfoModal.render(ctx);
-    }
-    if (this.designResumeModal.isVisible) {
-      this.designResumeModal.render(ctx);
-    }
-  }
-
-  /**
-   * 渲染加载页面
-   */
-  renderLoadingScreen(ctx) {
-    // 绘制背景
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, '#74b9ff');
-    gradient.addColorStop(1, '#0984e3');
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // 绘制游戏标题
     ctx.save();
@@ -1401,8 +966,8 @@ export default class Main {
     // 加载文字
     ctx.font = '14px Arial';
     let loadingText = '正在初始化...';
-    if (this.loadingProgress >= 30 && this.loadingProgress < 100) {
-      loadingText = '正在加载建筑图片...';
+    if (this.loadingProgress >= 60 && this.loadingProgress < 100) {
+      loadingText = '正在加载游戏资源...';
     } else if (this.loadingProgress >= 100) {
       loadingText = '加载完成！';
     }
@@ -1418,13 +983,11 @@ export default class Main {
       this.messageSystem.update(); // 更新消息系统
       this.updatePurchaseNotifications(); // 更新购买通知动画
       
-      // 如果在奢侈品店页面，更新奢侈品店状态
-      if (this.gameView === 'luxury') {
-        this.luxuryStorePage.update();
-      }
-      
       // 定期检查并记录资产价值变化
       this.updateAssetTracking();
+      
+      // 检查是否需要刷新交易中心房产列表（5分钟一次）
+      refreshTradingPropertyList();
     }
   }
   
@@ -1433,7 +996,7 @@ export default class Main {
    */
   updateAssetTracking() {
     // 计算当前房产总价值
-    const userProperties = getUserProperties();
+    const userProperties = this.gameDataAdapter.getUserProperties();
     const totalPropertyValue = userProperties.reduce((total, property) => {
       return total + property.currentPrice;
     }, 0);
@@ -1451,21 +1014,83 @@ export default class Main {
     this.aniId = requestAnimationFrame(this.loop.bind(this));
   }
 
-  handleResult(result) {
-    if (result.type === CLERK) {
-      this.clerkResumeModal.show(this.canvas.width, this.canvas.height, result.data);
-    } else if (result.type === DESIGNER) {
-
-      this.designResumeModal.show(this.canvas.width, this.canvas.height, result.data);
+  /**
+   * 小程序前台显示时的回调
+   */
+  onAppShow() {
+    // 设置游戏时间管理器为活跃状态
+    if (this.gameTimeManager) {
+      this.gameTimeManager.setActive(true);
     }
+    
+    // 保存游戏数据
+    this.saveGameData();
+  }
+
+  /**
+   * 小程序后台隐藏时的回调
+   */
+  onAppHide() {
+    // 设置游戏时间管理器为非活跃状态
+    if (this.gameTimeManager) {
+      this.gameTimeManager.setActive(false);
+    }
+    
+    // 保存游戏数据
+    this.saveGameData();
   }
 
   /**
    * 处理滚动事件
    */
   handleScroll(deltaY) {
-    if (this.gameView === 'realEstate') {
+    if (this.gameView === 'realEstate' && this.realEstatePage) {
       this.realEstatePage.handleScroll(deltaY);
+    }
+  }
+
+  // 添加新的方法来处理资金不足时的弹窗
+  showInsufficientFundsModal(property, requiredAmount, currentMoney) {
+    // 使用messageSystem显示弹窗
+    this.messageSystem.showInsufficientFundsModal(property, requiredAmount, currentMoney);
+  }
+
+  /**
+   * 处理购买成功
+   */
+  handlePurchaseSuccess(property) {
+    // 扣除金钱
+    this.money -= property.totalPrice;
+    
+    // 如果有资产管理器，添加到资产中
+    if (this.assetManager) {
+      this.assetManager.addAsset(property, property.totalPrice);
+    }
+    
+    // 添加到资产追踪器的交易记录
+    this.assetTracker.addTransaction('buy', property, property.totalPrice, this.money);
+    
+    // 显示购买成功消息
+    this.messageSystem.addMessage(`成功购买 ${property.name}！`, 'success');
+    
+    // 添加购买通知动画
+    this.addPurchaseNotification(`购买 ${property.name}`);
+    
+    // 保存游戏数据
+    this.saveGameData();
+  }
+
+  /**
+   * 处理每日新闻弹窗的日期变更
+   */
+  onDayChange(timeInfo) {
+    // 当日期变更时，显示每日新闻弹窗
+    if (this.dailyNewsModal && this.gameState === 'playing') {
+      // 计算用户总资产
+      const userAssets = this.money + (this.assetManager ? this.assetManager.getTotalAssetValue() : 0);
+      
+      // 显示每日新闻弹窗
+      this.dailyNewsModal.show(canvas.width, canvas.height, userAssets, '我');
     }
   }
 }

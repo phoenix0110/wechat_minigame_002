@@ -1,4 +1,5 @@
-import { formatPropertyPrice } from '../config/realEstateConfig.js';
+// 移除formatPropertyPrice的导入，统一使用formatMoney
+import { drawRoundRect, formatMoney } from './utils.js';
 
 /**
  * 出售确认弹窗 - 按照 Figma 设计 (node-id=81-802)
@@ -84,19 +85,7 @@ export default class SellConfirmModal {
   /**
    * 绘制圆角矩形辅助方法
    */
-  drawRoundRect(ctx, x, y, width, height, radius) {
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-  }
+  // 移除本地的drawRoundRect函数，使用utils中的版本
 
   /**
    * 渲染弹窗
@@ -118,7 +107,7 @@ export default class SellConfirmModal {
 
     // 绘制弹窗背景 - 淡绿色背景，29px圆角，blur效果
     ctx.fillStyle = '#EBFFEE';
-    this.drawRoundRect(ctx, modalX, modalY, modalWidth, modalHeight, 29);
+    drawRoundRect(ctx, modalX, modalY, modalWidth, modalHeight, 29);
     ctx.fill();
 
     // 绘制弹窗阴影效果
@@ -143,7 +132,7 @@ export default class SellConfirmModal {
     ctx.font = '400 15px "Noto Sans", Inter';
     ctx.textAlign = 'center';
     
-    const confirmText = `你是否确定出售这处房产，获得${formatPropertyPrice(this.property.currentPrice)}？`;
+    const confirmText = `你是否确定出售这处房产，获得${formatMoney(this.property.currentPrice)}？`;
     ctx.fillText(confirmText, textX + textWidth / 2, textY + 20);
 
     // 确认按钮 - 位置 (20, 118)，尺寸 120x48px，绿色背景
@@ -153,7 +142,7 @@ export default class SellConfirmModal {
     const confirmButtonHeight = 48;
     
     ctx.fillStyle = '#24B874';
-    this.drawRoundRect(ctx, confirmButtonX, confirmButtonY, confirmButtonWidth, confirmButtonHeight, 27);
+    drawRoundRect(ctx, confirmButtonX, confirmButtonY, confirmButtonWidth, confirmButtonHeight, 27);
     ctx.fill();
     
     // 确认按钮白色边框
@@ -174,7 +163,7 @@ export default class SellConfirmModal {
     const cancelButtonHeight = 48;
     
     ctx.fillStyle = '#FCB3AD';
-    this.drawRoundRect(ctx, cancelButtonX, cancelButtonY, cancelButtonWidth, cancelButtonHeight, 27);
+    drawRoundRect(ctx, cancelButtonX, cancelButtonY, cancelButtonWidth, cancelButtonHeight, 27);
     ctx.fill();
     
     // 取消按钮白色边框
