@@ -250,8 +250,14 @@ export default class GameDataAdapter {
       money: this.gameState.money,
       gameStartTime: this.gameState.gameStartTime,
       
-      // 用户房产
-      properties: this.userProperties,
+      // 用户房产 - 只保存关键信息，避免与实例池脱离
+      properties: this.userProperties.map(property => ({
+        id: property.id,
+        purchasePrice: property.purchasePrice,
+        purchaseTime: property.purchaseTime,
+        lastRentCollection: property.lastRentCollection,
+        rentProgress: property.rentProgress
+      })),
       
       // 交易历史
       transactionHistory: this.assetTracker.getTransactionHistory(),
@@ -301,6 +307,37 @@ export default class GameDataAdapter {
       systemData.marketState.lastUpdateTime = rankingData.lastUpdateTime;
     }
 
+    // 收集所有房产的价格历史数据
+    try {
+      // 获取房产实例池的方法，支持不同环境
+      let getAllPropertiesFunc = null;
+      if (typeof window !== 'undefined' && window.getAllAvailableProperties) {
+        getAllPropertiesFunc = window.getAllAvailableProperties;
+      } else if (typeof GameGlobal !== 'undefined' && GameGlobal.getAllAvailableProperties) {
+        getAllPropertiesFunc = GameGlobal.getAllAvailableProperties;
+      } else if (typeof global !== 'undefined' && global.getAllAvailableProperties) {
+        getAllPropertiesFunc = global.getAllAvailableProperties;
+      }
+      
+      if (getAllPropertiesFunc) {
+        const allProperties = getAllPropertiesFunc();
+        allProperties.forEach(property => {
+          if (property.priceHistory && property.priceHistory.length > 0) {
+            systemData.propertyPriceHistory[property.id] = {
+              currentPrice: property.currentPrice,
+              initialPrice: property.initialPrice,
+              highestPrice: property.highestPrice,
+              lowestPrice: property.lowestPrice,
+              lastPriceUpdate: property.lastPriceUpdate,
+              priceHistory: [...property.priceHistory]
+            };
+          }
+        });
+      }
+    } catch (error) {
+      // 静默处理错误
+    }
+
     return systemData;
   }
 
@@ -309,7 +346,6 @@ export default class GameDataAdapter {
    */
   _restoreUserData(userData) {
     if (!userData) {
-      console.warn('用户数据为空，使用默认数据');
       return false;
     }
     try {
@@ -317,8 +353,53 @@ export default class GameDataAdapter {
       this.gameState.money = userData.money || 5000000;
       this.gameState.gameStartTime = userData.gameStartTime || Date.now();
 
-      // 恢复用户房产数据
-      this.userProperties = userData.properties || [];
+      // 恢复用户房产数据 - 从实例池重新获取以保持同步
+      this.userProperties = [];
+      if (userData.properties && Array.isArray(userData.properties)) {
+        // 获取房产实例池的方法，支持不同环境
+        let getAllPropertiesFunc = null;
+        if (typeof window !== 'undefined' && window.getAllAvailableProperties) {
+          getAllPropertiesFunc = window.getAllAvailableProperties;
+        } else if (typeof GameGlobal !== 'undefined' && GameGlobal.getAllAvailableProperties) {
+          getAllPropertiesFunc = GameGlobal.getAllAvailableProperties;
+        } else if (typeof global !== 'undefined' && global.getAllAvailableProperties) {
+          getAllPropertiesFunc = global.getAllAvailableProperties;
+        }
+        
+        if (getAllPropertiesFunc) {
+          const allProperties = getAllPropertiesFunc();
+          const propertiesMap = new Map(allProperties.map(p => [p.id, p]));
+          
+          console.log(`🏠 开始恢复用户房产: ${userData.properties.length} 个房产`);
+          
+          userData.properties.forEach(savedProperty => {
+            const liveProperty = propertiesMap.get(savedProperty.id);
+            if (liveProperty) {
+              // 设置购买相关信息
+              liveProperty.purchasePrice = savedProperty.purchasePrice;
+              liveProperty.purchaseTime = savedProperty.purchaseTime;
+              liveProperty.lastRentCollection = savedProperty.lastRentCollection || Date.now();
+              liveProperty.rentProgress = savedProperty.rentProgress || 0;
+              
+              this.userProperties.push(liveProperty);
+              console.log(`✅ 恢复房产: ${liveProperty.name} (ID: ${liveProperty.id})`);
+            } else {
+              console.error(`❌ 无法找到房产 ID: ${savedProperty.id}`);
+            }
+          });
+          
+          console.log(`🏠 房产恢复完成: 成功恢复 ${this.userProperties.length} 个房产`);
+        } else {
+          console.error('❌ 无法获取房产实例池 - getAllAvailableProperties 方法未找到');
+          console.error('🔍 可用的全局对象:', {
+            hasWindow: typeof window !== 'undefined',
+            hasGlobal: typeof global !== 'undefined', 
+            hasGameGlobal: typeof GameGlobal !== 'undefined',
+            windowHasMethod: typeof window !== 'undefined' && !!window.getAllAvailableProperties,
+            gameGlobalHasMethod: typeof GameGlobal !== 'undefined' && !!GameGlobal.getAllAvailableProperties
+          });
+        }
+      }
 
       this.assetTracker.restoreData({
         transactionHistory: userData.transactionHistory,
@@ -331,7 +412,6 @@ export default class GameDataAdapter {
       this.assetManager.assets.clear();
       this.userProperties.forEach(property => {
         const price = property.currentPrice || property.totalPrice || 0;
-        // 直接添加到资产管理器，绕过重复检查
         const asset = {
           id: property.id,
           name: property.name,
@@ -373,13 +453,6 @@ export default class GameDataAdapter {
       // 更新排名相关成就
       this.updateRankingAchievements();
 
-      console.log('用户数据恢复成功', {
-        money: this.gameState.money,
-        propertiesCount: this.userProperties.length,
-        transactionsCount: userData.transactionHistory?.length || 0,
-        achievementsCount: this.achievementManager.getAllAchievements().length
-      });
-
       return true;
 
     } catch (error) {
@@ -393,28 +466,62 @@ export default class GameDataAdapter {
    */
   _restoreSystemData(systemData) {
     if (!systemData) {
-      console.warn('系统数据为空，保持 RankingManager 的默认初始化状态');
-      return true; // 系统数据可以为空，RankingManager 会使用默认初始化
+      return true; // 系统数据可以为空，使用默认初始化
     }
 
     try {
       // 恢复RankingManager数据
       if (this.rankingManager) {
-        // 只有当系统玩家数据存在且不为空时才恢复
         if (systemData.systemPlayers && Array.isArray(systemData.systemPlayers) && systemData.systemPlayers.length > 0) {
           this.rankingManager.restoreSystemPlayersData({
             systemPlayers: systemData.systemPlayers,
             lastUpdateTime: systemData.marketState?.lastUpdateTime
           });
-        } else {
-          console.log('系统玩家数据为空，保持 RankingManager 的默认初始化状态');
+        }
+      }
+
+      // 恢复房产价格历史数据
+      if (systemData.propertyPriceHistory && Object.keys(systemData.propertyPriceHistory).length > 0) {
+        try {
+          // 获取房产实例池的方法，支持不同环境
+          let getAllPropertiesFunc = null;
+          if (typeof window !== 'undefined' && window.getAllAvailableProperties) {
+            getAllPropertiesFunc = window.getAllAvailableProperties;
+          } else if (typeof GameGlobal !== 'undefined' && GameGlobal.getAllAvailableProperties) {
+            getAllPropertiesFunc = GameGlobal.getAllAvailableProperties;
+          } else if (typeof global !== 'undefined' && global.getAllAvailableProperties) {
+            getAllPropertiesFunc = global.getAllAvailableProperties;
+          }
+          
+          if (getAllPropertiesFunc) {
+            const allProperties = getAllPropertiesFunc();
+            let restoredCount = 0;
+            
+            allProperties.forEach(property => {
+              const savedPropertyData = systemData.propertyPriceHistory[property.id];
+              if (savedPropertyData) {
+                // 恢复价格信息
+                property.currentPrice = savedPropertyData.currentPrice || property.currentPrice;
+                property.highestPrice = savedPropertyData.highestPrice || property.highestPrice;
+                property.lowestPrice = savedPropertyData.lowestPrice || property.lowestPrice;
+                property.lastPriceUpdate = savedPropertyData.lastPriceUpdate || property.lastPriceUpdate;
+                
+                // 恢复价格历史记录
+                if (savedPropertyData.priceHistory && Array.isArray(savedPropertyData.priceHistory)) {
+                  property.priceHistory = [...savedPropertyData.priceHistory];
+                  restoredCount++;
+                }
+              }
+            });
+          }
+        } catch (error) {
+          // 静默处理房产恢复错误
         }
       }
 
       return true;
 
     } catch (error) {
-      console.error('恢复系统数据失败:', error);
       return false;
     }
   }

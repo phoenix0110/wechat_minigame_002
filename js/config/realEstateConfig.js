@@ -163,6 +163,16 @@ function getAllAvailableProperties() {
   return Array.from(PROPERTY_INSTANCE_POOL.values());
 }
 
+// 设置全局访问
+if (typeof window !== 'undefined') {
+  window.getAllAvailableProperties = getAllAvailableProperties;
+} else if (typeof global !== 'undefined') {
+  global.getAllAvailableProperties = getAllAvailableProperties;
+} else if (typeof GameGlobal !== 'undefined') {
+  // 微信小程序环境
+  GameGlobal.getAllAvailableProperties = getAllAvailableProperties;
+}
+
 // 通过ID获取房产实例（确保始终返回同一个实例）
 function getPropertyById(propertyId) {
   return PROPERTY_INSTANCE_POOL.get(propertyId);
@@ -290,6 +300,14 @@ function updateAllPropertyPrices() {
   };
   
   getAllAvailableProperties().forEach(updatePropertyPrice);
+  
+  // 触发数据保存以持久化价格历史
+  if (gameDataAdapter) {
+    // 异步保存，不阻塞游戏
+    gameDataAdapter.saveGameData().catch(() => {
+      // 静默处理保存错误
+    });
+  }
 }
 
 // 启动全局价格更新定时器
@@ -421,17 +439,11 @@ function setGameDataAdapter(adapter) {
   
   // 设置适配器后，立即重新生成交易房产列表，确保排除用户已拥有的房产
   CURRENT_TRADING_PROPERTIES = generateTradingProperties();
-  
-  console.log('游戏数据适配器已设置，交易房产列表已更新:', {
-    userProperties: gameDataAdapter ? gameDataAdapter.getUserProperties().length : 0,
-    tradingProperties: CURRENT_TRADING_PROPERTIES.length
-  });
 }
 
 // 设置游戏时间管理器
 function setGameTimeManager(timeManager) {
   gameTimeManager = timeManager;
-  console.log('游戏时间管理器已设置');
 }
 
 // 获取用户已购买的房产
@@ -441,6 +453,25 @@ function getUserProperties() {
 
 // 初始化房产数据
 function initializeRealEstate() {
+  // 确保全局方法正确设置（在不同环境下）
+  if (typeof window !== 'undefined') {
+    window.getAllAvailableProperties = getAllAvailableProperties;
+  } else if (typeof GameGlobal !== 'undefined') {
+    GameGlobal.getAllAvailableProperties = getAllAvailableProperties;
+  } else if (typeof global !== 'undefined') {
+    global.getAllAvailableProperties = getAllAvailableProperties;
+  }
+  
+  console.log('🔧 全局方法设置状态:', {
+    hasWindow: typeof window !== 'undefined',
+    hasGameGlobal: typeof GameGlobal !== 'undefined',
+    hasGlobal: typeof global !== 'undefined',
+    windowMethod: typeof window !== 'undefined' && !!window.getAllAvailableProperties,
+    gameGlobalMethod: typeof GameGlobal !== 'undefined' && !!GameGlobal.getAllAvailableProperties,
+    globalMethod: typeof global !== 'undefined' && !!global.getAllAvailableProperties,
+    poolSize: PROPERTY_INSTANCE_POOL.size
+  });
+
   // 生成交易大厅房产
   CURRENT_TRADING_PROPERTIES = generateTradingProperties();
   
@@ -452,14 +483,7 @@ function initializeRealEstate() {
   
   // 初始化房产列表刷新时间
   lastListRefreshTime = now;
-  
-  console.log('🏠 房产数据初始化完成:', {
-    实例池房产总数: PROPERTY_INSTANCE_POOL.size,
-    交易大厅房产: CURRENT_TRADING_PROPERTIES.length,
-    用户房产: gameDataAdapter ? gameDataAdapter.getUserProperties().length : 0,
-    价格更新覆盖: '将按定时器正常更新'
-  });
-  
+
   // 启动全局价格更新定时器
   startPriceUpdateTimer();
   

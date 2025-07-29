@@ -93,59 +93,17 @@ export default class GameStorageManager {
 
   /**
    * 加载用户游戏数据
-   * @returns {Object|null} 用户数据对象或null
+   * @returns {Object|null} 用户数据对象，失败时返回null
    */
   loadUserData() {
-    console.log(`🔍 尝试加载用户数据，存储key: ${this.STORAGE_KEYS.USER_DATA}`);
-    
-    // 添加详细的存储状态检查
-    try {
-      // 先检查所有存储keys
-      const allKeys = wx.getStorageInfoSync().keys;
-      console.log(`📱 微信存储中的所有keys:`, allKeys);
-      console.log(`📱 目标key是否存在:`, allKeys.includes(this.STORAGE_KEYS.USER_DATA));
-      
-      // 尝试直接读取原始数据
-      const rawData = wx.getStorageSync(this.STORAGE_KEYS.USER_DATA);
-      console.log(`📤 原始存储数据类型:`, typeof rawData);
-      console.log(`📤 原始存储数据长度:`, rawData ? JSON.stringify(rawData).length : 0);
-      
-      if (rawData) {
-        console.log(`📤 原始数据结构检查:`, {
-          hasMoney: rawData.money !== undefined,
-          hasProperties: Array.isArray(rawData.properties),
-          propertiesCount: rawData.properties?.length || 0,
-          hasTimestamp: rawData.timestamp !== undefined,
-          timestamp: rawData.timestamp ? new Date(rawData.timestamp).toLocaleString() : 'None'
-        });
-      }
-      
-    } catch (debugError) {
-      console.error('🔍 存储状态检查失败:', debugError);
-    }
-    
     const data = this._loadData(this.STORAGE_KEYS.USER_DATA);
 
+    // 直接返回数据，不使用默认数据掩盖数据丢失问题
     if (!data) {
-      console.log('❌ 未找到用户数据，返回默认数据');
-      
-      // 尝试检查是否有其他可能的存储key
-      try {
-        const storageInfo = wx.getStorageInfoSync();
-        const possibleKeys = storageInfo.keys.filter(key => 
-          key.includes('wechat') || key.includes('minigame') || key.includes('user')
-        );
-        if (possibleKeys.length > 0) {
-          console.log('🔍 发现可能相关的存储keys:', possibleKeys);
-        }
-      } catch (e) {
-        console.error('检查相关keys失败:', e);
-      }
-      
-      return this._getDefaultUserData();
+      console.error('❌ 用户数据加载失败 - 返回null以暴露问题');
+      return null;
     }
     
-    console.log(`✅ 用户数据加载成功: ${data.properties?.length || 0}个房产, ${data.transactionHistory?.length || 0}条交易记录`);
     return data;
   }
 
@@ -279,187 +237,119 @@ export default class GameStorageManager {
   }
   
   /**
-   * 实际执行存储操作
-   */
-  _doActualSave(key, data, resolve) {
-    return new Promise((resolveInternal) => {
-      try {
-        const startTime = Date.now();
-        console.log(`🔄 开始保存数据到 ${key}:`, {
-          properties: data.properties?.length || 0,
-          money: data.money,
-          timestamp: new Date().toLocaleTimeString(),
-          dataSize: JSON.stringify(data).length + ' 字符'
-        });
-        
-        // 强制清除可能的存储缓存
-        try {
-          wx.removeStorageSync(key);
-          console.log(`🗑️ 清除旧数据完成: ${key}`);
-        } catch (removeError) {
-          console.warn(`清除旧数据失败: ${removeError.message}`);
-        }
-        
-        // 短暂延迟确保清除完成
-        setTimeout(() => {
-                  try {
-          // 保存新数据
-          wx.setStorageSync(key, data);
-          const saveTime = Date.now() - startTime;
-          console.log(`💾 setStorageSync 调用完成，耗时: ${saveTime}ms`);
-          
-          // 同时保存一个备份版本（只有用户数据才备份）
-          if (key === this.STORAGE_KEYS.USER_DATA) {
-            try {
-              const backupKey = key + '_backup_' + Date.now();
-              const simpleBackup = {
-                money: data.money,
-                properties: data.properties,
-                gameStartTime: data.gameStartTime,
-                timestamp: data.timestamp
-              };
-              wx.setStorageSync(backupKey, simpleBackup);
-              console.log(`💾 备份数据保存成功: ${backupKey}`);
-              
-              // 清理过旧的备份（保留最新的3个）
-              const allKeys = wx.getStorageInfoSync().keys;
-              const backupKeys = allKeys.filter(k => k.startsWith(key + '_backup_')).sort();
-              if (backupKeys.length > 3) {
-                backupKeys.slice(0, -3).forEach(oldBackupKey => {
-                  try {
-                    wx.removeStorageSync(oldBackupKey);
-                  } catch (e) {
-                    console.warn(`清理旧备份失败: ${oldBackupKey}`);
-                  }
-                });
-              }
-            } catch (backupError) {
-              console.warn('备份数据保存失败:', backupError);
-            }
-          }
-            
-            // 立即验证保存结果
-            const savedData = wx.getStorageSync(key);
-            const verifyTime = Date.now() - startTime;
-            console.log(`🔍 getStorageSync 验证完成，总耗时: ${verifyTime}ms`);
-            
-            // 详细对比数据
-            const originalPropsCount = data.properties?.length || 0;
-            const savedPropsCount = savedData.properties?.length || 0;
-            const originalMoney = data.money || 0;
-            const savedMoney = savedData.money || 0;
-            
-            console.log(`📊 数据对比结果:`, {
-              '房产数量': `${originalPropsCount} → ${savedPropsCount}`,
-              '金钱数量': `${originalMoney} → ${savedMoney}`,
-              '数据大小': `${JSON.stringify(data).length} → ${JSON.stringify(savedData).length} 字符`,
-              '时间戳': `${data.timestamp} → ${savedData.timestamp}`
-            });
-            
-            // 检查基础数据完整性（放宽验证条件）
-            const hasBasicData = savedData && 
-                                savedData.money !== undefined && 
-                                Array.isArray(savedData.properties);
-            
-            if (!hasBasicData) {
-              console.error(`❌ 基础数据验证失败!`, {
-                hasData: !!savedData,
-                hasMoney: savedData?.money !== undefined,
-                hasProperties: Array.isArray(savedData?.properties)
-              });
-              resolve(false);
-            } else {
-              // 如果房产数量有轻微差异，记录但不认为失败
-              if (originalPropsCount !== savedPropsCount) {
-                console.warn(`⚠️ 房产数量有差异但基础数据正常: ${originalPropsCount} → ${savedPropsCount}`);
-                
-                // 只有差异很大时才检查详情
-                if (Math.abs(originalPropsCount - savedPropsCount) > 2) {
-                  console.warn(`⚠️ 房产数量差异较大，进行详细检查`);
-                  try {
-                    const storageInfo = wx.getStorageInfoSync();
-                    console.log(`📱 微信存储状态:`, {
-                      '当前使用': `${storageInfo.currentSize}KB`,
-                      '存储上限': `${storageInfo.limitSize}KB`,
-                      '使用率': `${(storageInfo.currentSize / storageInfo.limitSize * 100).toFixed(2)}%`
-                    });
-                  } catch (storageInfoError) {
-                    console.error('获取存储信息失败:', storageInfoError);
-                  }
-                }
-              }
-              
-              console.log(`✅ 数据保存成功 (${key})`);
-              resolve(true);
-            }
-            
-            resolveInternal();
-          } catch (error) {
-            console.error(`💥 setStorageSync 调用失败 (${key}):`, {
-              message: error.message,
-              errCode: error.errCode,
-              stack: error.stack
-            });
-            resolve(false);
-            resolveInternal();
-          }
-        }, 50);
-        
-      } catch (error) {
-        console.error(`💥 保存数据过程失败 (${key}):`, error);
-        resolve(false);
-        resolveInternal();
-      }
-    });
-  }
-
-  /**
    * 简单加载数据
    */
   _loadData(key) {
     try {
       const data = wx.getStorageSync(key);
       
-      // 如果主数据不存在且是用户数据，尝试从备份恢复
+      // 直接返回数据，不使用备份恢复机制
       if (!data && key === this.STORAGE_KEYS.USER_DATA) {
-        console.warn('主用户数据不存在，尝试从备份恢复');
+        console.error(`❌ 主用户数据丢失！存储键: ${key}`);
+        
+        // 检查是否有孤立的备份数据（用于诊断）
         try {
           const allKeys = wx.getStorageInfoSync().keys;
-          const backupKeys = allKeys
-            .filter(k => k.startsWith(key + '_backup_'))
-            .sort()
-            .reverse(); // 最新的在前
-            
-          for (const backupKey of backupKeys) {
-            try {
-              const backupData = wx.getStorageSync(backupKey);
-              if (backupData && backupData.money !== undefined) {
-                console.log(`✅ 从备份恢复数据成功: ${backupKey}`);
-                
-                // 将备份数据恢复为主数据
-                wx.setStorageSync(key, backupData);
-                return backupData;
-              }
-            } catch (e) {
-              console.warn(`备份数据读取失败: ${backupKey}`, e);
-            }
-          }
-          
+          const backupKeys = allKeys.filter(k => k.startsWith(key + '_backup_'));
           if (backupKeys.length > 0) {
-            console.warn('所有备份数据都无效');
-          } else {
-            console.warn('未找到任何备份数据');
+            console.error(`⚠️ 发现 ${backupKeys.length} 个孤立的备份文件，说明主数据在保存过程中丢失`);
+            console.error('🔍 最新备份:', backupKeys.sort().reverse()[0]);
+            
+            // 清理这些孤立的备份文件
+            backupKeys.forEach(backupKey => {
+              try {
+                wx.removeStorageSync(backupKey);
+                console.log(`🗑️ 清理孤立备份: ${backupKey}`);
+              } catch (e) {
+                // 静默处理
+              }
+            });
           }
-        } catch (backupError) {
-          console.error('备份恢复过程失败:', backupError);
+        } catch (e) {
+          // 静默处理诊断错误
         }
       }
       
       return data;
     } catch (error) {
-      console.error(`加载数据失败 (${key}):`, error);
+      console.error(`❌ 加载数据失败 (${key}):`, error);
       return null;
     }
+  }
+
+  /**
+   * 实际执行存储操作 - 修复危险的删除-延迟-保存逻辑
+   */
+  _doActualSave(key, data, resolve) {
+    return new Promise((resolveInternal) => {
+      try {
+        const startTime = Date.now();
+        
+        // 直接保存，不删除原数据，避免数据丢失窗口
+        try {
+          wx.setStorageSync(key, data);
+          
+          // 立即验证保存结果
+          const savedData = wx.getStorageSync(key);
+          
+          // 基础验证
+          if (!savedData || typeof savedData !== 'object') {
+            console.error(`❌ 数据保存验证失败!`, {
+              savedDataType: typeof savedData,
+              hasData: !!savedData,
+              key: key
+            });
+            resolve(false);
+          } else {
+            // 详细验证用户数据
+            if (key === this.STORAGE_KEYS.USER_DATA) {
+              const originalPropsCount = data.properties?.length || 0;
+              const savedPropsCount = savedData.properties?.length || 0;
+              const moneyMatch = savedData.money === data.money;
+              
+              if (!moneyMatch) {
+                console.error(`❌ 金钱数据不匹配: 期望 ${data.money}, 实际 ${savedData.money}`);
+                resolve(false);
+              } else if (Math.abs(originalPropsCount - savedPropsCount) > 0) {
+                console.error(`❌ 房产数量不匹配: 期望 ${originalPropsCount}, 实际 ${savedPropsCount}`);
+                resolve(false);
+              } else {
+                console.log(`✅ 数据保存成功 (${key})`);
+                resolve(true);
+              }
+            } else {
+              console.log(`✅ 数据保存成功 (${key})`);
+              resolve(true);
+            }
+          }
+          
+        } catch (saveError) {
+          console.error(`❌ 数据保存失败 (${key}):`, saveError.message);
+          
+          // 检查存储空间
+          try {
+            const storageInfo = wx.getStorageInfoSync();
+            const usagePercentage = (storageInfo.currentSize / storageInfo.limitSize * 100).toFixed(2);
+            console.error(`📱 存储使用情况: ${usagePercentage}% (${storageInfo.currentSize}KB/${storageInfo.limitSize}KB)`);
+            
+            if (usagePercentage > 95) {
+              console.error(`❌ 存储空间不足，可能导致保存失败`);
+            }
+          } catch (storageInfoError) {
+            console.error(`❌ 无法获取存储信息:`, storageInfoError);
+          }
+          
+          resolve(false);
+        }
+        
+        resolveInternal();
+        
+      } catch (error) {
+        console.error(`❌ 保存过程失败 (${key}):`, error);
+        resolve(false);
+        resolveInternal();
+      }
+    });
   }
 
   /**

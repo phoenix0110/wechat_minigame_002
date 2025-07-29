@@ -67,6 +67,10 @@ export default class Main {
       // 设置游戏时间管理器到房产配置
       setGameTimeManager(this.gameTimeManager);
       
+      // 🔥 重要：在加载数据之前先初始化房产实例池
+      // 确保getAllAvailableProperties方法在数据恢复时可用
+      initializeRealEstate();
+      
       // 设置游戏时间管理器为全局变量，供UI组件访问
       // 在微信小程序中使用 GameGlobal 而不是 window
       if (typeof window !== 'undefined') {
@@ -76,7 +80,7 @@ export default class Main {
         GameGlobal.gameTimeManager = this.gameTimeManager;
       }
 
-      // 加载游戏数据和设置
+      // 加载游戏数据和设置（在房产初始化之后）
       this.loadGameData();
 
       // 绑定触摸事件
@@ -144,9 +148,16 @@ export default class Main {
         }
         
       } else {
-        console.log('游戏数据加载失败或使用默认设置');
+        console.error('❌ 游戏数据加载失败 - 数据可能已丢失');
         this.money = 5000000; // 默认资金
-        this.shouldShowTutorial = true; // 首次用户显示教学
+        this.shouldShowTutorial = true; // 显示教学
+        
+        // 延迟显示用户提示
+        setTimeout(() => {
+          if (this.messageSystem) {
+            this.messageSystem.addMessage('游戏数据丢失，已重置为初始状态', 'error');
+          }
+        }, 2000);
       }
       
       return success;
@@ -155,6 +166,14 @@ export default class Main {
       console.error('加载游戏数据时发生错误:', error);
       this.money = 5000000; // 错误时使用默认值
       this.shouldShowTutorial = true;
+      
+      // 延迟显示错误提示
+      setTimeout(() => {
+        if (this.messageSystem) {
+          this.messageSystem.addMessage('数据加载异常，游戏已重置', 'error');
+        }
+      }, 2000);
+      
       return false;
     }
   }
@@ -286,8 +305,8 @@ export default class Main {
       });
     
     
-    // 确保房产数据正确初始化（在页面组件创建后调用，避免覆盖已正确生成的交易列表）
-    initializeRealEstate();
+    // 房产数据已在构造函数中初始化，这里不需要重复调用
+    // initializeRealEstate(); // 已移除重复调用
     
     // 同步数据适配器的当前金钱状态
     this.gameDataAdapter.setMoney(this.money);
