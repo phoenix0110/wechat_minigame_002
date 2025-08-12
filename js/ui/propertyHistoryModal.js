@@ -1,6 +1,6 @@
 // 移除formatPropertyPrice的导入，统一使用formatMoney
 import { drawRoundRect, formatMoney } from './utils.js';
-import { TIME_AXIS_CONFIG } from '../config/timeConfig.js';
+import { TIME_AXIS_CONFIG, PROPERTY_TIME_CONFIG } from '../config/timeConfig.js';
 
 /**
  * 房产历史价格弹窗
@@ -190,7 +190,7 @@ export default class PropertyHistoryModal {
       ctx.stroke();
     }
     
-    // 绘制垂直网格线 - 按照时间轴刻度（每15分钟，共6个刻度）
+    // 绘制垂直网格线 - 按照时间轴刻度（每2分钟，共6个刻度）
     const tickCount = TIME_AXIS_CONFIG.TICK_COUNT;
     for (let i = 0; i < tickCount; i++) {
       const gridX = chartX + (i * chartWidth / (tickCount - 1));
@@ -208,13 +208,12 @@ export default class PropertyHistoryModal {
       window.gameTimeManager : GameGlobal.gameTimeManager;
 
     const currentGameTime = gameTimeManager.getTotalGameTime();
-    const totalAxisMs = TIME_AXIS_CONFIG.AXIS_LENGTH; // 30分钟总时间轴长度
-    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 30分钟数据显示长度
+    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 10分钟数据显示长度
     
     // 计算时间轴覆盖范围（基于数据显示长度）
     let timeAxisCoverage = 1.0; // 默认覆盖整个数据区域
     if (currentGameTime < dataLengthMs) {
-      // 游戏时间不足30分钟，计算覆盖比例
+      // 游戏时间不足10分钟，计算覆盖比例
       timeAxisCoverage = currentGameTime / dataLengthMs;
     }    
     // 计算价格数据点的时间位置
@@ -222,8 +221,7 @@ export default class PropertyHistoryModal {
       priceData, 
       chartX, 
       chartWidth, 
-      currentGameTime, 
-      totalAxisMs
+      currentGameTime
     );
     
     // 绘制价格曲线区域填充 - 渐变色
@@ -332,54 +330,43 @@ export default class PropertyHistoryModal {
   /**
    * 计算数据点在图表中的位置
    */
-  calculateDataPointPositions(priceData, chartX, chartWidth, currentGameTime, totalAxisMs) {
+  calculateDataPointPositions(priceData, chartX, chartWidth, currentGameTime) {
     if (priceData.length === 0) return [];
     
     const positions = [];
-    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 30分钟数据显示区域
     const dataAreaWidth = chartWidth; // 数据显示区域宽度（占总宽度的100%）
+    const maxDataPoints = PROPERTY_TIME_CONFIG.MAX_PRICE_HISTORY_COUNT; // 最大数据点数量（60个）
     
-    // 计算时间范围
-    let startTime, endTime;
-    if (currentGameTime >= dataLengthMs) {
-      // 游戏时间超过30分钟，显示最近30分钟
-      startTime = currentGameTime - dataLengthMs;
-      endTime = currentGameTime;
-    } else {
-      // 游戏时间不足30分钟，显示从开始到现在
-      startTime = 0;
-      endTime = currentGameTime;
-    }
-    
-    priceData.forEach(record => {
+    // 数据已经是按时间顺序排列的，无需再排序
+    priceData.forEach((record, index) => {
       // 计算每个数据点在时间轴上的位置
       let timePosition;
       
-      if (currentGameTime >= dataLengthMs) {
-        // 游戏时间超过30分钟，按最近30分钟的时间范围计算位置
-        timePosition = (record.timestamp - startTime) / (endTime - startTime);
+      if (priceData.length <= maxDataPoints) {
+        // 数据点不足60个，按照实际索引位置在60个数据点中的比例显示
+        // 例如：5个数据点时，位置为 0/59, 1/59, 2/59, 3/59, 4/59
+        timePosition = priceData.length === 1 ? 0 : index / (maxDataPoints - 1);
       } else {
-        // 游戏时间不足30分钟，按30分钟时间轴计算位置
-        timePosition = record.timestamp / dataLengthMs;
+        // 数据点超过60个（理论上不会发生，因为有滑动窗口限制）
+        timePosition = index / (maxDataPoints - 1);
       }
       
-      // 确保位置在有效范围内，且只在数据显示区域内
+      // 确保位置在有效范围内
       timePosition = Math.max(0, Math.min(1, timePosition));
       
       // 计算在数据显示区域内的x坐标
       const x = chartX + timePosition * dataAreaWidth;
       positions.push({
         x,
-        price: record.price,
-        timestamp: record.timestamp
+        price: record.price
       });
     });
     
     return positions;
   }
   
-  /**
-   * 渲染时间轴标签 - 固定30分钟时间轴，每5分钟一个刻度
+    /**
+   * 渲染时间轴标签 - 固定10分钟时间轴，每2分钟一个刻度
    */
   renderTimeLabels(ctx, x1, x2, x3, y) {
     // 获取游戏时间管理器
@@ -392,15 +379,14 @@ export default class PropertyHistoryModal {
       ctx.font = '500 12px Inter';
       ctx.textAlign = 'center';
       ctx.fillText('0分钟', x1, y);
-      ctx.fillText('15分钟', x2, y);
-      ctx.fillText('30分钟', x3, y);
+      ctx.fillText('5分钟', x2, y);
+      ctx.fillText('10分钟', x3, y);
       return;
     }
-    
+ 
     // 获取当前游戏时间
     const currentGameTime = gameTimeManager.getTotalGameTime();
-    const totalAxisMs = TIME_AXIS_CONFIG.AXIS_LENGTH; // 30分钟总时间轴长度
-    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 30分钟数据显示长度
+    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 10分钟数据显示长度
     
     // 格式化时间显示函数
     const formatTimeLabel = (gameTimeMs) => {
@@ -409,26 +395,26 @@ export default class PropertyHistoryModal {
       const hours = Math.floor(minutes / 60);
       
       if (currentGameTime >= dataLengthMs) {
-        // 游戏时间超过30分钟，显示时分格式
+        // 游戏时间超过10分钟，显示时分格式
         const displayHours = Math.floor(gameTimeMs / 1000 / 60 / 60);
         const displayMinutes = Math.floor((gameTimeMs / 1000 / 60) % 60);
         return `${displayHours}:${displayMinutes.toString().padStart(2, '0')}`;
       } else {
-        // 游戏时间不足30分钟，显示分钟格式
+        // 游戏时间不足10分钟，显示分钟格式
         return `${minutes}分钟`;
       }
     };
     
-    // 计算时间轴标签（固定30分钟窗口）
+    // 计算时间轴标签（固定10分钟窗口）
     let startTime, middleTime, endTime;
     
     if (currentGameTime >= dataLengthMs) {
-      // 游戏时间超过30分钟，显示最近30分钟的时间范围
+      // 游戏时间超过10分钟，显示最近10分钟的时间范围
       startTime = currentGameTime - dataLengthMs;
       middleTime = currentGameTime - dataLengthMs / 2;
       endTime = currentGameTime;
     } else {
-      // 游戏时间不足30分钟，显示从开始到当前时间的范围
+      // 游戏时间不足10分钟，显示从开始到当前时间的范围
       startTime = 0;
       middleTime = currentGameTime / 2;
       endTime = currentGameTime;
@@ -448,36 +434,25 @@ export default class PropertyHistoryModal {
    * 获取基于游戏时间的价格数据
    */
   getPriceDataByTimeRange() {
-    const gameTimeManager = (typeof window !== 'undefined') ? 
-      window.gameTimeManager : GameGlobal.gameTimeManager;
     const priceHistory = this.property.priceHistory || [];
     
-    if (!gameTimeManager) {
-      // 如果没有游戏时间管理器，返回所有历史数据
-      return [...priceHistory];
+    // 获取最大显示数据点数量（对应10分钟，每10秒一个点 = 60个点）
+    const maxDataPoints = PROPERTY_TIME_CONFIG.MAX_PRICE_HISTORY_COUNT;
+    
+    // 获取最新的数据点，最多60个
+    let displayData = priceHistory.slice(-maxDataPoints);
+    
+    // 如果当前价格还没有在历史记录中，添加当前价格作为最新数据点
+    const lastRecord = displayData[displayData.length - 1];
+    const needCurrentPrice = !lastRecord || lastRecord.price !== this.property.currentPrice;
+    
+    if (needCurrentPrice) {
+      const currentData = {
+        price: this.property.currentPrice
+      };
+      displayData = [...displayData, currentData];
     }
     
-    const currentGameTime = gameTimeManager.getTotalGameTime();
-    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 30分钟的数据显示长度
-    
-    // 添加当前价格作为最新数据点
-    const currentData = {
-      timestamp: currentGameTime,
-      price: this.property.currentPrice
-    };
-    
-    let filteredHistory;
-    
-    if (currentGameTime >= dataLengthMs) {
-      // 游戏时间超过30分钟，获取最近30分钟的游戏时间数据
-      const cutoffTime = currentGameTime - dataLengthMs;
-      filteredHistory = priceHistory.filter(record => record.timestamp >= cutoffTime);
-    } else {
-      // 游戏时间不足30分钟，获取从开始到现在的所有数据
-      filteredHistory = priceHistory.filter(record => record.timestamp >= 0);
-    }
-    
-    // 合并历史数据和当前数据
-    return [...filteredHistory, currentData];
+    return displayData;
   }
 } 

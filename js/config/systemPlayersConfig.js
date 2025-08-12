@@ -407,6 +407,71 @@ export const SYSTEM_PLAYERS_CONFIG = [
 ];
 
 /**
+ * 行业和公司名称映射表
+ */
+export const INDUSTRY_COMPANY_MAPPING = [
+  { industry: '房地产', company: '华润置地' },
+  { industry: '科技', company: '腾讯科技' },
+  { industry: '金融', company: '招商银行' },
+  { industry: '制造业', company: '比亚迪汽车' },
+  { industry: '零售', company: '万达商业' },
+  { industry: '能源', company: '中石油集团' },
+  { industry: '医疗', company: '恒瑞医药' },
+  { industry: '教育', company: '新东方教育' },
+  { industry: '物流', company: '顺丰速运' },
+  { industry: '娱乐', company: '华谊兄弟' },
+  { industry: '互联网', company: '阿里巴巴' },
+  { industry: '通信', company: '华为技术' },
+  { industry: '航空', company: '南方航空' },
+  { industry: '酒店', company: '锦江国际' },
+  { industry: '食品', company: '伊利集团' },
+  { industry: '服装', company: '李宁体育' },
+  { industry: '汽车', company: '吉利汽车' },
+  { industry: '化工', company: '中化集团' },
+  { industry: '建筑', company: '中建集团' },
+  { industry: '保险', company: '中国平安' },
+  { industry: '电商', company: '京东商城' },
+  { industry: '游戏', company: '网易游戏' },
+  { industry: '影视', company: '光线传媒' },
+  { industry: '农业', company: '新希望集团' },
+  { industry: '钢铁', company: '宝钢集团' },
+  { industry: '电力', company: '国家电网' },
+  { industry: '航运', company: '中远海运' },
+  { industry: '矿业', company: '紫金矿业' },
+  { industry: '家电', company: '美的集团' },
+  { industry: '酒业', company: '茅台集团' },
+  { industry: '旅游', company: '携程旅行' },
+  { industry: '咨询', company: '德勤咨询' },
+  { industry: '广告', company: '奥美广告' },
+  { industry: '投资', company: '红杉资本' },
+  { industry: '券商', company: '中信证券' },
+  { industry: '基金', company: '易方达基金' },
+  { industry: '租车', company: '神州租车' },
+  { industry: '快递', company: '中通快递' },
+  { industry: '外卖', company: '美团外卖' },
+  { industry: '打车', company: '滴滴出行' },
+  { industry: '支付', company: '蚂蚁金服' },
+  { industry: '云计算', company: '阿里云' },
+  { industry: 'AI', company: '百度智能' },
+  { industry: '芯片', company: '海思半导体' },
+  { industry: '新能源', company: '宁德时代' },
+  { industry: '直播', company: '抖音集团' },
+  { industry: '社交', company: '字节跳动' },
+  { industry: '短视频', company: '快手科技' },
+  { industry: '电竞', company: '完美世界' }
+];
+
+/**
+ * 根据玩家ID获取行业公司信息
+ * @param {number} playerId 玩家ID
+ * @returns {Object} 包含industry和company的对象
+ */
+export function getIndustryCompanyByPlayerId(playerId) {
+  const index = (playerId - 1) % INDUSTRY_COMPANY_MAPPING.length;
+  return INDUSTRY_COMPANY_MAPPING[index];
+}
+
+/**
  * 获取系统玩家配置数组
  * @returns {Array} 系统玩家配置数组
  */

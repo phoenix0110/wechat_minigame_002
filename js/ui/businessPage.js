@@ -35,7 +35,7 @@ export default class BusinessPage {
     
     // 自动新闻刷新相关
     this.newsRefreshTimer = null;
-    this.newsRefreshInterval = 5 * 60 * 1000; // 5分钟
+    this.newsRefreshInterval = 1 * 60 * 1000; // 1分钟
     this.lastNewsRefreshTime = 0;
     this.nextNewsRefreshTime = 0;
     
@@ -100,27 +100,11 @@ export default class BusinessPage {
   }
 
   /**
-   * 计算下一个5分钟整点时间
+   * 计算下一次新闻刷新时间（30秒后）
    */
   getNextRefreshTime() {
-    const now = new Date();
-    const currentMinutes = now.getMinutes();
-    const currentSeconds = now.getSeconds();
-    const currentMilliseconds = now.getMilliseconds();
-    
-    // 计算到下一个5分钟整点的时间
-    const minutesToNext5Min = 5 - (currentMinutes % 5);
-    const nextRefreshTime = new Date(now);
-    
-    if (minutesToNext5Min === 5 && currentSeconds === 0 && currentMilliseconds === 0) {
-      // 如果正好是5分钟整点，下次刷新时间就是5分钟后
-      nextRefreshTime.setMinutes(currentMinutes + 5, 0, 0);
-    } else {
-      // 否则设置到下一个5分钟整点
-      nextRefreshTime.setMinutes(currentMinutes + minutesToNext5Min, 0, 0);
-    }
-    
-    return nextRefreshTime.getTime();
+    const now = Date.now();
+    return now + 30 * 1000; // 30秒后
   }
 
   /**
@@ -138,23 +122,21 @@ export default class BusinessPage {
     // 检查是否需要立即刷新（如果从未刷新过或已过期）
     const now = Date.now();
     if (this.lastNewsRefreshTime === 0 || now >= this.nextNewsRefreshTime) {
-      this.refreshRandomNews();
+      this.addSingleNews();
       this.lastNewsRefreshTime = now;
       this.nextNewsRefreshTime = this.getNextRefreshTime();
-    }
+    }  
     
     // 启动定时器，每分钟检查一次是否需要刷新
     this.newsRefreshTimer = setInterval(() => {
       const currentTime = Date.now();
       if (currentTime >= this.nextNewsRefreshTime) {
-        this.refreshRandomNews();
+        this.addSingleNews();
         this.lastNewsRefreshTime = currentTime;
         this.nextNewsRefreshTime = this.getNextRefreshTime();
-        console.log('新闻已刷新，下次刷新时间:', new Date(this.nextNewsRefreshTime).toLocaleTimeString());
       }
     }, 60 * 1000); // 每分钟检查一次
-    
-    console.log('自动新闻刷新已启动，下次刷新时间:', new Date(this.nextNewsRefreshTime).toLocaleTimeString());
+
   }
 
   /**
@@ -164,12 +146,20 @@ export default class BusinessPage {
     if (this.newsRefreshTimer) {
       clearInterval(this.newsRefreshTimer);
       this.newsRefreshTimer = null;
-      console.log('自动新闻刷新已停止');
     }
   }
 
   /**
-   * 随机刷新5条新闻
+   * 添加单条新闻
+   */
+  addSingleNews() {
+    const news = newsManager.addSingleNews();
+    // 更新新闻列表
+    this.updateNewsList();
+  }
+
+  /**
+   * 随机刷新5条新闻（保留用于初始化）
    */
   refreshRandomNews() {    
     // 动态获取所有可用的新闻ID
@@ -244,13 +234,12 @@ export default class BusinessPage {
     if (!this.newsRefreshTimer) {
       this.startAutoNewsRefresh();
     } else {
-      // 检查是否需要刷新新闻
-      if (this.checkNewsNeedsRefresh()) {
-        this.refreshRandomNews();
-        this.lastNewsRefreshTime = Date.now();
-        this.nextNewsRefreshTime = this.getNextRefreshTime();
-        console.log('页面显示时刷新新闻，下次刷新时间:', new Date(this.nextNewsRefreshTime).toLocaleTimeString());
-      }
+          // 检查是否需要刷新新闻
+    if (this.checkNewsNeedsRefresh()) {
+      this.addSingleNews();
+      this.lastNewsRefreshTime = Date.now();
+      this.nextNewsRefreshTime = this.getNextRefreshTime();
+    }
     }
     
     this.updateNewsList();
@@ -513,7 +502,7 @@ export default class BusinessPage {
       ctx.font = '12px Inter';
       const remainingMinutes = this.getTimeToNextRefresh();
       if (remainingMinutes > 0) {
-        ctx.fillText(`新闻每5分钟刷新，${remainingMinutes}分钟后更新`, canvas.width / 2, contentY + contentHeight / 2 + 30);
+        ctx.fillText(`新闻每1分钟刷新，${remainingMinutes}分钟后更新`, canvas.width / 2, contentY + contentHeight / 2 + 30);
       } else {
         ctx.fillText('新闻即将刷新...', canvas.width / 2, contentY + contentHeight / 2 + 30);
       }
@@ -526,23 +515,6 @@ export default class BusinessPage {
           this.renderNewsItem(ctx, news, newsY);
         }
       });
-      
-      // 在新闻列表底部显示下次刷新时间
-      const lastNewsY = contentY + this.newsList.length * 127 - this.newsScrollY + 20;
-              const refreshInfoY = lastNewsY + 127 + 10; // 在最后一条新闻下方
-      
-      if (refreshInfoY > -20 && refreshInfoY < contentY + contentHeight + 50) {
-        ctx.fillStyle = '#999999';
-        ctx.font = '10px Inter';
-        ctx.textAlign = 'center';
-        
-        const remainingMinutes = this.getTimeToNextRefresh();
-        if (remainingMinutes > 0) {
-          ctx.fillText(`${remainingMinutes}分钟后刷新新闻`, canvas.width / 2, refreshInfoY);
-        } else {
-          ctx.fillText('新闻即将刷新...', canvas.width / 2, refreshInfoY);
-        }
-      }
     }
     
     ctx.restore();
@@ -585,13 +557,6 @@ export default class BusinessPage {
       contentLines.slice(0, 1).forEach((line, index) => {
         ctx.fillText(line, margin + 25, y + 45 + index * 22);
       });
-      
-      // 绘制价格影响提示 - 按照Figma设计 (10px, 红色)
-      const effectText = news.priceEffect === 'increase' ? '↗ 上涨' : '↘ 下跌';
-      ctx.fillStyle = news.priceEffect === 'increase' ? '#16996B' : '#FF3B30';
-      ctx.font = '400 10px Roboto, Inter';
-      ctx.textAlign = 'left';
-      ctx.fillText(effectText, margin + 25, y + 85);
       
       // 绘制圆形倒计时器 - 移至右侧
       const remainingTime = (news.effectEndTime - now) / 1000;

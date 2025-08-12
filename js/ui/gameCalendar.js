@@ -9,20 +9,20 @@ export default class GameCalendar {
     this.gameTimeManager = gameTimeManager;
     this.isVisible = true;
     
-    // 日历样式配置 - 根据需求调整
+    // 日历样式配置 - 根据需求调整，与金钱bar高度一致
     this.calendarWidth = 112;
-    this.calendarHeight = 62;
+    this.calendarHeight = 30; // 与金钱bar高度保持一致
     this.x = 20; // 左边与顶部导航栏左边对齐
-    this.y = 48; // 调整位置使底部与金钱bar底边对齐 (金钱bar Y=80, 高度=30, 所以底边在110, 日历高度62, 所以Y=110-62=48)
+    this.y = 80; // 与金钱bar Y坐标对齐
     this.borderRadius = 6;
     
     // 颜色配置 - 淡橘黄色，与经营和交易页背景色系一致
     this.backgroundColor = '#F7B500'; // 橘黄色，与渐变背景的黄色端点一致
     this.textColor = '#F2F2F2'; // 浅色文字
     
-    // 字体配置 - 根据 Figma 设计
-    this.timeFont = '400 40px Inter'; // 大字体显示时间
-    this.dateFont = '600 14px Inter'; // 较小字体显示日期
+    // 字体配置 - 与金钱bar保持一致
+    this.timeFont = '600 16px Inter'; // 与金钱bar字体一致
+    this.dateFont = '600 16px Inter'; // 与金钱bar字体一致
     
     // 日期变更检测
     this.lastDate = null; // 记录上一次的日期
@@ -117,9 +117,9 @@ export default class GameCalendar {
     const gameStartTime = this.gameTimeManager.gameStartTime || currentRealTime;
     const realTimeElapsed = currentRealTime - gameStartTime;
     
-    // 每5分钟现实时间 = 1天游戏时间
-    const realMinutesPerGameDay = 5;
-    const msPerGameDay = realMinutesPerGameDay * 60 * 1000; // 5分钟 = 300,000毫秒
+    // 每1分钟现实时间 = 1天游戏时间
+    const realMinutesPerGameDay = 1;
+    const msPerGameDay = realMinutesPerGameDay * 60 * 1000; // 1分钟 = 60,000毫秒
     
     // 计算已经过去的游戏天数
     const gameDaysPassed = Math.floor(realTimeElapsed / msPerGameDay);
@@ -172,9 +172,9 @@ export default class GameCalendar {
     // 获取游戏时间信息
     const timeInfo = this.getGameTimeInfo();
     
-    // 绘制日期 - 使用与原来分钟秒相同的字体大小，居中显示
+    // 绘制日期 - 与金钱bar字体大小一致，垂直居中显示
     ctx.fillStyle = this.textColor;
-    ctx.font = this.dateFont; // 使用小字体，与原来的分钟秒字体大小一致
+    ctx.font = this.dateFont; // 与金钱bar字体一致
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const mainDateText = this.formatMonthDay(timeInfo.month, timeInfo.day);

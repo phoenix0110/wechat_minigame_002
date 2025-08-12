@@ -7,12 +7,13 @@ import {
   getTimeUntilNextPriceUpdate,
   updateAllRents,
   getRentProgress,
-  getCurrentRentAmount
+  getCurrentRentAmount,
+  sellProperty
 } from '../config/realEstateConfig.js';
 import PropertyHistoryModal from './propertyHistoryModal.js';
 import PurchaseConfirmModal from './purchaseConfirmModal.js';
 import SellConfirmModal from './sellConfirmModal.js';
-import { TIME_AXIS_CONFIG, ANIMATION_TIME_CONFIG } from '../config/timeConfig.js';
+import { TIME_AXIS_CONFIG, ANIMATION_TIME_CONFIG, ASSET_TRACKING_CONFIG } from '../config/timeConfig.js';
 import { 
   drawRoundRect, 
   formatMoney, 
@@ -44,7 +45,7 @@ export default class RealEstatePage {
     this.transactionScrollOffset = 0;
     this.maxTransactionScrollOffset = 0;
     
-    // 移除时间选择，固定显示过去30分钟
+    // 移除时间选择，固定显示过去10分钟
     
     // 初始化弹窗组件
     this.propertyHistoryModal = new PropertyHistoryModal();
@@ -115,50 +116,34 @@ export default class RealEstatePage {
   }
 
   /**
-   * 获取基于游戏时间的过去30分钟图表数据
+   * 获取基于游戏时间的过去10分钟图表数据
    */
   getChartDataByTimeRange() {
     if (!this.assetTracker) return [];
     
-    // 获取游戏时间管理器
-    const gameTimeManager = (typeof window !== 'undefined') ? 
-      window.gameTimeManager : GameGlobal.gameTimeManager;
-    
-    if (!gameTimeManager) {
-      // 如果没有游戏时间管理器，返回空数据
-      return [];
-    }
-    
-    const currentGameTime = gameTimeManager.getTotalGameTime();
-    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 30分钟的数据显示长度
     const allData = this.assetTracker.getAssetHistory();
     
-    let filteredData;
+    // 获取最大显示数据点数量（对应30分钟，每30秒一个点 = 60个点）
+    const maxDataPoints = ASSET_TRACKING_CONFIG.MAX_ASSET_HISTORY_COUNT;
     
-    if (currentGameTime >= dataLengthMs) {
-      // 游戏时间超过30分钟，获取最近30分钟的游戏时间数据
-      const cutoffTime = currentGameTime - dataLengthMs;
-      filteredData = allData.filter(record => record.timeFromStart >= cutoffTime);
-    } else {
-      // 游戏时间不足30分钟，获取从开始到现在的所有数据
-      filteredData = allData.filter(record => record.timeFromStart >= 0);
+    // 获取最新的数据点，最多60个
+    let displayData = allData.slice(-maxDataPoints);
+    
+    // 如果数据点太多，进行采样以提高性能
+    const maxDisplayPoints = 20; // 图表显示最多20个点
+    if (displayData.length <= maxDisplayPoints) {
+      return displayData;
     }
     
-    // 如果数据点太多，进行采样
-    const maxPoints = 15;
-    if (filteredData.length <= maxPoints) {
-      return filteredData;
-    }
-    
-    const step = Math.floor(filteredData.length / maxPoints);
+    const step = Math.floor(displayData.length / maxDisplayPoints);
     const sampledData = [];
     
-    for (let i = 0; i < filteredData.length; i += step) {
-      sampledData.push(filteredData[i]);
+    for (let i = 0; i < displayData.length; i += step) {
+      sampledData.push(displayData[i]);
     }
     
     // 确保包含最新的数据点
-    const lastPoint = filteredData[filteredData.length - 1];
+    const lastPoint = displayData[displayData.length - 1];
     if (sampledData.length > 0 && sampledData[sampledData.length - 1] !== lastPoint) {
       sampledData.push(lastPoint);
     }
@@ -167,7 +152,7 @@ export default class RealEstatePage {
   }
 
   /**
-   * 渲染时间标签 - 固定30分钟时间轴，每5分钟一个刻度
+   * 渲染时间标签 - 固定10分钟时间轴，每2分钟一个刻度
    */
   renderTimeLabels(ctx, chartData, x1, x2, x3, y) {
     // 获取游戏时间管理器
@@ -180,34 +165,33 @@ export default class RealEstatePage {
       ctx.font = '500 12px Inter, Arial';
       ctx.textAlign = 'center';
       ctx.fillText('0分钟', x1, y);
-      ctx.fillText('15分钟', x2, y);
-      ctx.fillText('30分钟', x3, y);
+      ctx.fillText('5分钟', x2, y);
+      ctx.fillText('10分钟', x3, y);
       return;
     }
     
     const currentGameTime = gameTimeManager.getTotalGameTime();
-    const totalAxisMs = TIME_AXIS_CONFIG.AXIS_LENGTH; // 30分钟总时间轴长度
-    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 30分钟数据显示长度
+    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 10分钟数据显示长度
     
     // 格式化时间显示函数
     const formatTimeLabel = (gameTimeMs) => {
       const totalSeconds = Math.floor(gameTimeMs / 1000);
       const minutes = Math.floor(totalSeconds / 60);
       
-      // 对于30分钟时间轴，始终显示分钟格式
+      // 对于10分钟时间轴，始终显示分钟格式
       return `${minutes}分钟`;
     };
     
-    // 计算时间轴标签（固定30分钟窗口）
+    // 计算时间轴标签（固定10分钟窗口）
     let startTime, middleTime, endTime;
     
     if (currentGameTime >= dataLengthMs) {
-      // 游戏时间超过30分钟，显示最近30分钟的时间范围
+      // 游戏时间超过10分钟，显示最近10分钟的时间范围
       startTime = currentGameTime - dataLengthMs;
       middleTime = currentGameTime - dataLengthMs / 2;
       endTime = currentGameTime;
     } else {
-      // 游戏时间不足30分钟，显示从开始到当前时间的范围
+      // 游戏时间不足10分钟，显示从开始到当前时间的范围
       startTime = 0;
       middleTime = currentGameTime / 2;
       endTime = currentGameTime;
@@ -280,7 +264,7 @@ export default class RealEstatePage {
     }
 
     const currentGameTime = gameTimeManager.getTotalGameTime();
-    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 30分钟数据显示长度
+    const dataLengthMs = TIME_AXIS_CONFIG.DATA_LENGTH; // 10分钟数据显示长度
 
     // 找到最大值和最小值
     let maxValue = 0;
@@ -296,12 +280,12 @@ export default class RealEstatePage {
     maxValue += margin;
     minValue = Math.max(0, minValue - margin);
 
-    // 绘制虚线网格 - 紫色虚线（只绘制水平网格线，去掉垂直网格线）
+    // 绘制虚线网格 - 紫色虚线
     ctx.strokeStyle = '#6F6AF8';
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 2]);
     
-    // 只绘制水平网格线
+    // 绘制水平网格线
     for (let i = 0; i <= 4; i++) {
       const gridY = chartY + (i * chartHeight / 4);
       ctx.beginPath();
@@ -310,7 +294,17 @@ export default class RealEstatePage {
       ctx.stroke();
     }
     
+    // 绘制垂直网格线 - 适应10分钟时间轴，每2分钟一条线（10分钟/5条线）
+    for (let i = 0; i <= 5; i++) {
+      const gridX = chartX + (i * chartWidth / 5);
+      ctx.beginPath();
+      ctx.moveTo(gridX, chartY);
+      ctx.lineTo(gridX, chartY + chartHeight);
+      ctx.stroke();
+    }
+    
     ctx.setLineDash([]); // 重置虚线
+    ctx.lineWidth = 1;
 
     // 绘制Y轴标签 - 以万为单位显示
     ctx.fillStyle = '#838383';
@@ -350,7 +344,11 @@ export default class RealEstatePage {
       });
       
       // 回到底部完成填充
-      ctx.lineTo(chartX + chartWidth, chartY + chartHeight);
+      if (dataPointsWithPositions.length > 0) {
+        const lastPoint = dataPointsWithPositions[dataPointsWithPositions.length - 1];
+        ctx.lineTo(lastPoint.x, chartY + chartHeight);
+      }
+      ctx.lineTo(chartX, chartY + chartHeight);
       ctx.closePath();
       ctx.fill();
     }
@@ -386,33 +384,60 @@ export default class RealEstatePage {
       
       // 绘制标注文本
       const labelText = `当前资产总值：${formatMoney(lastPoint.totalAssetValue)}`;
-      ctx.fillStyle = '#2C2C2C';
-      ctx.font = '400 12px Inter, Arial';
+      ctx.font = '500 12px Inter';
       ctx.textAlign = 'center';
+      const textMetrics = ctx.measureText(labelText);
+      const textWidth = textMetrics.width;
+      const textHeight = 16;
       
       // 计算标注位置，避免超出边界
       let labelX = lastPoint.x;
-      let labelY = lastPlotY - 15;
+      let labelY = lastPlotY - 20;
+      const labelPadding = 6;
+      const labelWidth = textWidth + labelPadding * 2;
+      const labelHeight = textHeight + labelPadding;
       
       // 如果标注会超出上边界，则显示在点的下方
-      if (labelY < chartY + 15) {
+      if (labelY - labelHeight/2 < chartY + 15) {
         labelY = lastPlotY + 25;
       }
       
       // 如果标注会超出右边界，则向左调整
-      if (labelX > chartX + chartWidth - 100) {
-        labelX = chartX + chartWidth - 100;
-        ctx.textAlign = 'right';
+      if (labelX + labelWidth/2 > chartX + chartWidth) {
+        labelX = chartX + chartWidth - labelWidth/2;
       }
       
-      ctx.fillText(labelText, labelX, labelY);
+      // 绘制标签背景 - 紫色背景，圆角矩形（与当前价格样式一致）
+      ctx.fillStyle = '#6F6AF8';
+      
+      // 使用兼容性方法绘制圆角矩形
+      const rectX = labelX - labelWidth/2;
+      const rectY = labelY - labelHeight/2;
+      const radius = 4;
+      
+      ctx.beginPath();
+      ctx.moveTo(rectX + radius, rectY);
+      ctx.lineTo(rectX + labelWidth - radius, rectY);
+      ctx.quadraticCurveTo(rectX + labelWidth, rectY, rectX + labelWidth, rectY + radius);
+      ctx.lineTo(rectX + labelWidth, rectY + labelHeight - radius);
+      ctx.quadraticCurveTo(rectX + labelWidth, rectY + labelHeight, rectX + labelWidth - radius, rectY + labelHeight);
+      ctx.lineTo(rectX + radius, rectY + labelHeight);
+      ctx.quadraticCurveTo(rectX, rectY + labelHeight, rectX, rectY + labelHeight - radius);
+      ctx.lineTo(rectX, rectY + radius);
+      ctx.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
+      ctx.closePath();
+      ctx.fill();
+      
+      // 绘制标签文本 - 白色文字
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(labelText, labelX, labelY + 1);
     }
 
-    // 绘制底部统计信息 - 固定显示过去30分钟数据
+    // 绘制底部统计信息 - 固定显示过去10分钟数据
     const statsY = contentY + 282;
     
-    // 固定显示过去30分钟的标签
-    const timeRangeLabel = '过去30分钟';
+    // 固定显示过去10分钟的标签
+    const timeRangeLabel = '过去10分钟';
     
     if (chartData.length > 0) {
       const values = chartData.map(p => p.totalAssetValue);
@@ -439,9 +464,6 @@ export default class RealEstatePage {
       ctx.fillText(formatMoney(lowValue), contentX + 96, statsY + 16);
     }
 
-    // 绘制X轴时间标签
-    const timeLabelsY = contentY + 256;
-    this.renderTimeLabels(ctx, null, contentX + 79, contentX + 157, contentX + 235, timeLabelsY);
   }
 
   /**
@@ -666,6 +688,33 @@ export default class RealEstatePage {
   }
 
   /**
+   * 检查房产是否在冷却期
+   * @param {Object} property 房产对象
+   * @returns {Object} { inCooldown: boolean, remainingSeconds: number }
+   */
+  checkPropertyCooldown(property) {
+    if (!property.purchaseTime) {
+      return { inCooldown: false, remainingSeconds: 0 };
+    }
+    
+    // 获取游戏时间管理器
+    const gameTimeManager = (typeof window !== 'undefined') ? 
+      window.gameTimeManager : GameGlobal.gameTimeManager;
+    
+    const currentGameTime = gameTimeManager ? gameTimeManager.getGameTimestamp() : Date.now();
+    const purchaseTime = property.purchaseTime || 0;
+    const oneMinuteMs = 1 * 60 * 1000; // 1分钟的毫秒数
+    
+    if (currentGameTime - purchaseTime < oneMinuteMs) {
+      const remainingTime = oneMinuteMs - (currentGameTime - purchaseTime);
+      const remainingSeconds = Math.ceil(remainingTime / 1000);
+      return { inCooldown: true, remainingSeconds: remainingSeconds };
+    }
+    
+    return { inCooldown: false, remainingSeconds: 0 };
+  }
+
+  /**
    * 启动卡片移除动画
    */
   startCardRemoveAnimation(propertyId) {
@@ -887,10 +936,19 @@ export default class RealEstatePage {
               return { type: 'upgrade_property', property: property };
             }
             
-            // 出售资产按钮 - 显示出售确认弹窗
+            // 出售资产按钮 - 检查冷却期
             const sellButtonX = upgradeButtonX + firstRowButtonWidth + buttonGap;
             if (x >= sellButtonX && x <= sellButtonX + firstRowButtonWidth &&
                 y >= firstRowY && y <= firstRowY + bottomButtonHeight) {
+              
+              // 检查冷却期
+              const cooldownStatus = this.checkPropertyCooldown(property);
+              if (cooldownStatus.inCooldown) {
+                // 冷却期间不响应点击
+                return null;
+              }
+              
+              // 不在冷却期，显示出售确认弹窗
               this.sellConfirmModal.show(property);
               return null; // 不直接出售，等待弹窗确认
             }
@@ -1535,15 +1593,29 @@ export default class RealEstatePage {
       ctx.textAlign = 'center';
       ctx.fillText('房屋升级', upgradeButtonX + firstRowButtonWidth / 2, firstRowY + 20);
 
-      // 出售资产按钮 (红色背景)
+      // 出售资产按钮 - 检查冷却期
       const sellButtonX = upgradeButtonX + firstRowButtonWidth + buttonGap;
-      ctx.fillStyle = '#FCB3AD';
-      drawRoundRect(ctx, sellButtonX, firstRowY, firstRowButtonWidth, bottomButtonHeight, 8.98);
-      ctx.fill();
-      ctx.fillStyle = '#000000';
-      ctx.font = '700 10.9px Inter';
-      ctx.textAlign = 'center';
-      ctx.fillText('出售资产', sellButtonX + firstRowButtonWidth / 2, firstRowY + 20);
+      const cooldownStatus = this.checkPropertyCooldown(property);
+      
+      if (cooldownStatus.inCooldown) {
+        // 冷却期间：淡灰色背景 + 倒计时文字
+        ctx.fillStyle = 'rgba(128, 128, 128, 0.6)'; // 淡灰色半透明
+        drawRoundRect(ctx, sellButtonX, firstRowY, firstRowButtonWidth, bottomButtonHeight, 8.98);
+        ctx.fill();
+        ctx.fillStyle = '#666666'; // 深灰色文字
+        ctx.font = '700 10.9px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${cooldownStatus.remainingSeconds}秒后可出售`, sellButtonX + firstRowButtonWidth / 2, firstRowY + 20);
+      } else {
+        // 正常状态：红色背景
+        ctx.fillStyle = '#FCB3AD';
+        drawRoundRect(ctx, sellButtonX, firstRowY, firstRowButtonWidth, bottomButtonHeight, 8.98);
+        ctx.fill();
+        ctx.fillStyle = '#000000';
+        ctx.font = '700 10.9px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText('出售资产', sellButtonX + firstRowButtonWidth / 2, firstRowY + 20);
+      }
       
       // 第二行：房产价格趋势按钮 (全宽，淡绿色背景) - 按照 Figma 设计
       const secondRowY = firstRowY + bottomButtonHeight + buttonGap;
@@ -1682,34 +1754,31 @@ export default class RealEstatePage {
 
   /**
    * 计算资产数据点在图表中的位置
+   * 基于实际游戏时间计算位置，横坐标始终代表10分钟的时间轴
    */
   calculateAssetDataPointPositions(assetData, chartX, chartWidth, currentGameTime, dataLengthMs) {
     if (assetData.length === 0) return [];
     
     const positions = [];
+    const recordInterval = ASSET_TRACKING_CONFIG.RECORD_INTERVAL; // 10秒记录间隔
+    const maxTimeSpan = 10 * 60 * 1000; // 10分钟时间跨度（毫秒）
     
-    // 计算时间范围
-    let startTime, endTime;
-    if (currentGameTime >= dataLengthMs) {
-      // 游戏时间超过30分钟，显示最近30分钟
-      startTime = currentGameTime - dataLengthMs;
-      endTime = currentGameTime;
-    } else {
-      // 游戏时间不足30分钟，显示从开始到现在
-      startTime = 0;
-      endTime = currentGameTime;
-    }
-    
-    assetData.forEach(record => {
-      // 计算每个数据点在时间轴上的位置
+    // 数据已经是按时间顺序排列的，无需再排序
+    assetData.forEach((record, index) => {
+
       let timePosition;
       
-      if (currentGameTime >= dataLengthMs) {
-        // 游戏时间超过30分钟，按最近30分钟的时间范围计算位置
-        timePosition = (record.timeFromStart - startTime) / (endTime - startTime);
+      if (currentGameTime <= maxTimeSpan) {
+        // 游戏时间不超过10分钟：基于实际时间位置
+        // 数据点的时间位置 = (index * 记录间隔) / 总时间跨度
+        const dataPointTime = index * recordInterval;
+        timePosition = dataPointTime / maxTimeSpan;
       } else {
-        // 游戏时间不足30分钟，按30分钟时间轴计算位置
-        timePosition = record.timeFromStart / dataLengthMs;
+        // 游戏时间超过10分钟：显示最近10分钟的数据
+        // 计算数据点相对于当前时间的偏移
+        const dataPointTime = currentGameTime - (assetData.length - 1 - index) * recordInterval;
+        const startTime = currentGameTime - maxTimeSpan;
+        timePosition = (dataPointTime - startTime) / maxTimeSpan;
       }
       
       // 确保位置在有效范围内
@@ -1719,8 +1788,7 @@ export default class RealEstatePage {
       const x = chartX + timePosition * chartWidth;
       positions.push({
         x,
-        totalAssetValue: record.totalAssetValue,
-        timeFromStart: record.timeFromStart
+        totalAssetValue: record.totalAssetValue
       });
     });
     

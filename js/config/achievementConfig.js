@@ -420,19 +420,9 @@ export class AchievementManager {
       if (isCompleted && !achievement.completed) {
         achievement.completed = true;
         achievement.completedAt = Date.now();
-        
-        // 触发成就完成事件
-        this.onAchievementCompleted(achievement);
+
       }
     });
-  }
-
-  /**
-   * 成就完成回调
-   */
-  onAchievementCompleted(achievement) {
-    console.log(`🎉 成就达成: ${achievement.title}`);
-    // 可以在这里添加成就完成的通知逻辑
   }
 
   /**

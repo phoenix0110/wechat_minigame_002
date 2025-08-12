@@ -80,17 +80,6 @@ export default class RankingManager {
     }, this.updateInterval);
 
   }
-
-  /**
-   * 停止定期更新
-   */
-  stopPeriodicUpdate() {
-    if (this.updateTimer) {
-      clearInterval(this.updateTimer);
-      this.updateTimer = null;
-    }
-  }
-
   /**
    * 获取排行榜数据（包含用户）
    */
@@ -164,7 +153,6 @@ export default class RankingManager {
       // 只有当有有效的系统玩家数据时才恢复
       this.systemPlayers = data.systemPlayers;
       this.lastUpdateTime = data.lastUpdateTime || Date.now();
-      console.log('系统玩家数据已恢复，共', this.systemPlayers.length, '个玩家');
     } else {
       console.log('恢复数据无效或为空，保持当前系统玩家状态，共', this.systemPlayers.length, '个玩家');
     }

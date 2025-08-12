@@ -187,12 +187,6 @@ export default class GameTimeManager {
       this.gameStartTime = state.gameStartTime || Date.now();
       this.totalGameTime = state.totalGameTime || 0;
       this.lastActiveTime = state.lastActiveTime || Date.now();
-      
-      console.log('恢复游戏时间状态:', {
-        gameStartTime: new Date(this.gameStartTime).toLocaleString(),
-        totalGameTime: this.formatGameTime(),
-        lastActiveTime: new Date(this.lastActiveTime).toLocaleString()
-      });
     }
   }
   

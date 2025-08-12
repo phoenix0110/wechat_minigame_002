@@ -6,6 +6,8 @@ import {
   handleBottomNavigationTouch,
   drawGradientBackground
 } from './utils.js';
+import { getIndustryCompanyByPlayerId } from '../config/systemPlayersConfig.js';
+import AvatarModal from './avatarModal.js';
 
 /**
  * 排名页面 - 参考 Figma 设计
@@ -39,6 +41,9 @@ export default class RankingPage {
     // 玩家头像图片
     this.playerImages = {};
     this.loadPlayerImages();
+    
+    // 头像放大模态框
+    this.avatarModal = new AvatarModal();
   }
 
   /**
@@ -160,13 +165,18 @@ export default class RankingPage {
   handleTouch(x, y) {
     if (!this.isVisible) return null;
 
-    // 1. 首先检查底部导航栏 - 最高优先级，使用统一的导航处理函数
+    // 1. 首先检查头像模态框（最高优先级）
+    if (this.avatarModal.isVisible) {
+      return this.avatarModal.handleTouch(x, y);
+    }
+
+    // 2. 检查底部导航栏 - 使用统一的导航处理函数
     const navResult = handleBottomNavigationTouch(x, y, 'ranking');
     if (navResult) {
       return navResult;
     }
 
-    // 2. 检查加号按钮点击 (顶部money bar右侧)
+    // 3. 检查加号按钮点击 (顶部money bar右侧)
     if (this.topBarClickAreas && this.topBarClickAreas.plusButton) {
       const plusBtn = this.topBarClickAreas.plusButton;
       if (x >= plusBtn.x && x <= plusBtn.x + plusBtn.width &&
@@ -175,7 +185,53 @@ export default class RankingPage {
       }
     }
 
-    // 3. 检查排名列表点击（如果需要的话，暂时只是滚动）
+    // 4. 检查头像点击（系统玩家头像）
+    const avatarClickResult = this.checkAvatarClick(x, y);
+    if (avatarClickResult) {
+      return avatarClickResult;
+    }
+
+    return null;
+  }
+
+  /**
+   * 检查头像点击
+   */
+  checkAvatarClick(x, y) {
+    const listStartY = 130 + this.headerHeight;
+    const listX = (canvas.width - 372) / 2;
+    
+    // 计算可见的列表项
+    const startIndex = Math.floor(this.scrollOffset / this.listItemHeight);
+    const endIndex = Math.min(this.rankingData.length, startIndex + Math.ceil(canvas.height / this.listItemHeight) + 1);
+    
+    for (let i = startIndex; i < endIndex; i++) {
+      const player = this.rankingData[i];
+      if (!player || player.isUser) continue; // 只有系统玩家头像可以点击
+      
+      const itemY = listStartY + i * this.listItemHeight - this.scrollOffset;
+      
+      // 跳过不在可见区域的项目
+      if (itemY + this.listItemHeight < listStartY || itemY > canvas.height - 55) {
+        continue;
+      }
+      
+      // 头像区域
+      const avatarX = listX + 19;
+      const avatarY = itemY + 17;
+      const avatarSize = 48;
+      
+      // 检查点击是否在头像区域内
+      if (x >= avatarX && x <= avatarX + avatarSize &&
+          y >= avatarY && y <= avatarY + avatarSize) {
+        
+        // 显示头像放大模态框
+        const avatarImg = this.playerImages[`images/${player.avatar}`];
+        this.avatarModal.show(canvas.width, canvas.height, player, avatarImg);
+        
+        return { type: 'avatar_click', player: player };
+      }
+    }
     
     return null;
   }
@@ -263,18 +319,7 @@ export default class RankingPage {
         ctx.arc(avatarX + avatarSize/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI * 2);
         ctx.fill();
       }
-      
-      // 用户在线状态标识
-      if (actualRank === 2) { // 第三名有绿色在线标识
-        ctx.fillStyle = '#6DD400';
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(avatarX + avatarSize - 5, avatarY + 5, 4.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-      
+            
       // 玩家信息
       const infoY = topThreeY + 37 + 16 + 48 + 14;
       
@@ -387,7 +432,14 @@ export default class RankingPage {
       // 简化的描述文字
       ctx.fillStyle = '#666666';
       ctx.font = '400 10px Inter';
-      const description = player.isUser ? '这是您当前的排名位置' : `${player.level}级投资者，经验值${player.experience}`;
+      let description;
+      if (player.isUser) {
+        description = '这是您当前的排名位置';
+      } else {
+        // 为系统玩家生成行业公司老板称号
+        const industryCompany = getIndustryCompanyByPlayerId(player.id);
+        description = `${industryCompany.industry}${industryCompany.company}老板`;
+      }
       ctx.fillText(description, infoX, infoY + 50);
     }
   }
@@ -448,5 +500,8 @@ export default class RankingPage {
     this.bottomNavClickAreas = navResult;
     
     ctx.restore();
+    
+    // 渲染头像放大模态框（在最上层）
+    this.avatarModal.render(ctx);
   }
 } 

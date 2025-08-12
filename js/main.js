@@ -18,6 +18,7 @@ import { sellProperty, collectRent, updateAllRents, refreshTradingPropertyList, 
 import { PROPERTY_TIME_CONFIG, LOADING_TIME_CONFIG, ANIMATION_TIME_CONFIG } from './config/timeConfig.js';
 import AssetTracker from './managers/assetTracker';
 import { formatMoney } from './ui/utils.js';
+import { newsManager } from './config/newsConfig.js';
 
 
 const ctx = canvas.getContext('2d'); // 获取canvas的2D绘图上下文
@@ -79,6 +80,9 @@ export default class Main {
         // 微信小程序环境
         GameGlobal.gameTimeManager = this.gameTimeManager;
       }
+
+      // 设置新闻管理器为全局变量
+      this.initializeNewsManagerGlobal();
 
       // 加载游戏数据和设置（在房产初始化之后）
       this.loadGameData();
@@ -325,6 +329,9 @@ export default class Main {
       this.gameState = 'playing';
       this.worldPage.show();
       
+      // 初始化新闻系统
+      this.initializeNewsSystem();
+      
       // 检查是否首次进入游戏
       this.checkFirstTimeUser();
     }, LOADING_TIME_CONFIG.STARTUP_DELAY); // 根据配置的延迟时间
@@ -410,6 +417,12 @@ export default class Main {
    * 处理触摸事件
    */
   handleTouch(x, y) {
+    // 在加载状态下处理重置按钮点击
+    if (this.gameState === 'loading') {
+      this.handleLoadingStateTouch(x, y);
+      return;
+    }
+    
     if (this.gameState !== 'playing') return;
 
     // 最高优先级：处理教学对话框
@@ -706,6 +719,12 @@ export default class Main {
     // 房屋升级后租金增长10%，但房屋价格不变
     property.monthlyRent = Math.round(property.monthlyRent * 1.1);
     
+    // 更新升级等级
+    if (!property.upgradeLevel) {
+      property.upgradeLevel = 0;
+    }
+    property.upgradeLevel += 1;
+    
     // 更新成就统计
     this.gameDataAdapter.upgradeProperty();
     
@@ -913,6 +932,200 @@ export default class Main {
   }
 
   /**
+   * 处理加载状态下的触摸事件
+   */
+  handleLoadingStateTouch(x, y) {
+    // 检查是否点击了重置按钮
+    if (this.resetButtonBounds && 
+        x >= this.resetButtonBounds.x && 
+        x <= this.resetButtonBounds.x + this.resetButtonBounds.width &&
+        y >= this.resetButtonBounds.y && 
+        y <= this.resetButtonBounds.y + this.resetButtonBounds.height) {
+      this.confirmReset();
+    }
+  }
+
+  /**
+   * 确认重置游戏
+   */
+  confirmReset() {
+    // 使用微信小程序的确认对话框
+    wx.showModal({
+      title: '重置游戏',
+      content: '确定要重置所有游戏数据吗？这将清除所有存档，包括金钱、房产、成就等，此操作不可撤销！',
+      confirmText: '确定重置',
+      cancelText: '取消',
+      confirmColor: '#E74C3C',
+      success: (res) => {
+        if (res.confirm) {
+          this.resetAllGameData();
+        }
+      }
+    });
+  }
+
+  /**
+   * 重置所有游戏数据
+   */
+  resetAllGameData() {
+    try {
+      // 1. 清空所有存储数据
+      if (this.gameDataAdapter && this.gameDataAdapter.storageManager) {
+        this.gameDataAdapter.storageManager.clearAllData();
+      }
+
+      // 2. 重置各个管理器
+      if (this.assetManager) {
+        this.assetManager.clear();
+      }
+
+      if (this.assetTracker) {
+        // AssetTracker没有clear方法，手动重置
+        this.assetTracker.assetHistory = [];
+        this.assetTracker.transactionHistory = [];
+        this.assetTracker.gameStartTime = Date.now();
+        this.assetTracker.lastRecordTime = 0;
+      }
+
+      if (this.rankingManager) {
+        // RankingManager没有resetData方法，重新初始化
+        this.rankingManager.initializeSystemPlayers();
+        this.rankingManager.lastUpdateTime = Date.now();
+      }
+
+      // 3. 重置新闻系统
+      if (typeof window !== 'undefined' && window.newsManager) {
+        window.newsManager.clearAllNews();
+      } else if (typeof GameGlobal !== 'undefined' && GameGlobal.newsManager) {
+        GameGlobal.newsManager.clearAllNews();
+      }
+
+      // 4. 重置成就系统
+      if (this.gameDataAdapter && this.gameDataAdapter.achievementManager) {
+        this.gameDataAdapter.achievementManager.resetAchievements();
+      }
+
+      // 5. 重置游戏时间管理器
+      if (this.gameTimeManager) {
+        // GameTimeManager没有resetTime方法，手动重置
+        this.gameTimeManager.gameStartTime = Date.now();
+        this.gameTimeManager.totalGameTime = 0;
+        this.gameTimeManager.lastActiveTime = Date.now();
+        this.gameTimeManager.isActive = true;
+      }
+
+      // 6. 重置所有房产价格历史
+      this.resetAllPropertyPriceHistory();
+
+      // 7. 重置用户房产列表
+      if (this.gameDataAdapter) {
+        this.gameDataAdapter.userProperties = [];
+      }
+
+      // 8. 重置游戏状态
+      this.money = 5000000;
+      this.shouldShowTutorial = true;
+      this.gameState = 'loading';
+      this.loadingProgress = 0;
+
+      // 9. 显示成功消息
+      wx.showToast({
+        title: '重置成功！',
+        icon: 'success',
+        duration: 2000
+      });
+
+      // 10. 重新开始游戏
+      setTimeout(() => {
+        this.simulateLoading();
+      }, 1000);
+
+      console.log('✅ 游戏数据重置完成');
+
+    } catch (error) {
+      console.error('❌ 重置游戏数据失败:', error);
+      wx.showToast({
+        title: '重置失败，请重试',
+        icon: 'error',
+        duration: 2000
+      });
+    }
+  }
+
+  /**
+   * 重置所有房产价格历史
+   */
+  resetAllPropertyPriceHistory() {
+    try {
+      // 获取所有房产并重置价格历史
+      const getAllPropertiesFunc = (typeof window !== 'undefined' && window.getAllAvailableProperties) || 
+                                  (typeof GameGlobal !== 'undefined' && GameGlobal.getAllAvailableProperties) ||
+                                  (typeof global !== 'undefined' && global.getAllAvailableProperties);
+      
+      if (getAllPropertiesFunc) {
+        const allProperties = getAllPropertiesFunc();
+        allProperties.forEach(property => {
+          property.priceHistory = [];
+          property.currentPrice = property.initialPrice;
+          property.totalPrice = property.initialPrice;
+          property.highestPrice = property.initialPrice;
+          property.lowestPrice = property.initialPrice;
+          property.lastPriceUpdate = Date.now();
+          
+          // 重置购买相关信息
+          property.purchasePrice = null;
+          property.purchaseTime = null;
+          property.lastRentCollection = 0;
+          property.rentProgress = 0;
+        });
+      }
+    } catch (error) {
+      console.error('❌ 重置房产价格历史失败:', error);
+    }
+  }
+
+  /**
+   * 初始化新闻管理器全局变量
+   */
+  initializeNewsManagerGlobal() {
+    try {
+      // 设置新闻管理器为全局变量
+      if (typeof window !== 'undefined') {
+        window.newsManager = newsManager;
+      } else {
+        // 微信小程序环境
+        GameGlobal.newsManager = newsManager;
+      }
+      
+    } catch (error) {
+      console.error('设置新闻管理器全局变量失败:', error);
+    }
+  }
+
+  /**
+   * 初始化新闻系统
+   */
+  initializeNewsSystem() {
+    try {
+      // 如果没有活跃新闻，添加初始新闻
+      const activeNews = newsManager.getActiveNews();
+      if (activeNews.length === 0) {
+        // 添加1-3条初始新闻
+        const initialCount = Math.floor(Math.random() * 3) + 1;
+        for (let i = 0; i < initialCount; i++) {
+          newsManager.addSingleNews();
+        }
+        console.log('已添加', initialCount, '条初始新闻');
+      } else {
+        console.log('已恢复', activeNews.length, '条新闻');
+      }
+      
+    } catch (error) {
+      console.error('初始化新闻系统失败:', error);
+    }
+  }
+
+  /**
    * 渲染加载页面
    */
   renderLoadingScreen(ctx) {
@@ -991,6 +1204,35 @@ export default class Main {
       loadingText = '加载完成！';
     }
     ctx.fillText(`${loadingText} ${Math.floor(this.loadingProgress)}%`, canvas.width / 2, progressBarY + 30);
+
+    // 绘制重置按钮
+    const resetButtonWidth = 120;
+    const resetButtonHeight = 40;
+    const resetButtonX = (canvas.width - resetButtonWidth) / 2;
+    const resetButtonY = canvas.height - 100;
+
+    // 按钮背景
+    ctx.fillStyle = 'rgba(231, 76, 60, 0.8)';
+    ctx.fillRect(resetButtonX, resetButtonY, resetButtonWidth, resetButtonHeight);
+
+    // 按钮边框
+    ctx.strokeStyle = '#E74C3C';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(resetButtonX, resetButtonY, resetButtonWidth, resetButtonHeight);
+
+    // 按钮文字
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('重置游戏', resetButtonX + resetButtonWidth / 2, resetButtonY + resetButtonHeight / 2 + 5);
+
+    // 保存重置按钮的位置信息
+    this.resetButtonBounds = {
+      x: resetButtonX,
+      y: resetButtonY,
+      width: resetButtonWidth,
+      height: resetButtonHeight
+    };
 
     ctx.restore();
   }

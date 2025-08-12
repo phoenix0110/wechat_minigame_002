@@ -37,19 +37,22 @@ export default class AssetTracker {
    * @param {number} propertyValue 房产总价值
    */
   recordAssetValue(cash, propertyValue) {
-    const now = Date.now();
     const totalAssetValue = cash + propertyValue;
     
     const record = {
-      timestamp: now,
-      timeFromStart: now - this.gameStartTime,
       cash: cash,
       propertyValue: propertyValue,
       totalAssetValue: totalAssetValue
     };
     
     this.assetHistory.push(record);
-    this.lastRecordTime = now;
+    this.lastRecordTime = Date.now(); // 仅用于控制记录频率，不存储到记录中
+    
+    // 滑动窗口机制：固定保持60个数据点
+    if (this.assetHistory.length > ASSET_TRACKING_CONFIG.MAX_ASSET_HISTORY_COUNT) {
+      // 删除最早的数据点，保持固定数量
+      this.assetHistory = this.assetHistory.slice(-ASSET_TRACKING_CONFIG.MAX_ASSET_HISTORY_COUNT);
+    }
   }
 
   /**
@@ -80,13 +83,12 @@ export default class AssetTracker {
   addTransaction(type, property, price, currentCash, purchasePrice = null) {
     const transaction = {
       id: this.transactionHistory.length + 1,
-      timestamp: Date.now(),
+      timestamp: Date.now(), // 交易记录保留timestamp用于显示具体时间
       type: type, // 'buy' 或 'sell'
       propertyName: property.name,
       propertyIcon: property.icon,
       price: price,
       currentCash: currentCash,
-      timeFromStart: Date.now() - this.gameStartTime,
       purchasePrice: purchasePrice // 购买价格，用于计算盈亏
     };
     

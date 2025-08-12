@@ -24,6 +24,8 @@ function convertConfigToPropertyData(config) {
     houseType: config.houseType, // 新增房屋类型
     starRating: config.starRating, // 新增星级评定
     monthlyRent: config.monthlyRent, // 新增月租金
+    baseMonthlyRent: config.monthlyRent, // 保存基础月租金（用于升级计算）
+    upgradeLevel: 0, // 升级等级，用于跟踪升级次数
     initialPrice: config.initialPrice, // 保存初始价格
     currentPrice: config.initialPrice,
     totalPrice: config.initialPrice, // 总价等于当前价格
@@ -255,8 +257,8 @@ function updateAllPropertyPrices() {
        // 有新闻影响时，使用新闻的效果值
        changePercent = newsEffect.totalEffect;
      } else {
-       // 无新闻影响时，使用原有的随机涨跌逻辑
-       changePercent = (Math.random() * 0.06 + 0.02) * (Math.random() > 0.5 ? 1 : -1);
+       // 无新闻影响时，使用随机涨跌逻辑（-1% - 1%）
+       changePercent = (Math.random() * 0.02 - 0.01); // -1% 到 1% 之间
      }
     
     const newPrice = Math.round(property.currentPrice * (1 + changePercent));
@@ -279,7 +281,6 @@ function updateAllPropertyPrices() {
     const changePercentage = (change / oldPrice) * 100;
     
     property.priceHistory.push({
-      timestamp: gameTimestamp, // 使用游戏时间戳
       price: property.currentPrice,
       change: change,
       changePercentage: changePercentage
@@ -287,14 +288,9 @@ function updateAllPropertyPrices() {
     
     property.lastPriceUpdate = gameTimestamp; // 使用游戏时间戳
     
-    // 清理超过30分钟游戏时间的历史记录（基于数据显示长度）
-    const dataRetentionTime = gameTimeManager.getGameTimeAgo(TIME_AXIS_CONFIG.DATA_LENGTH);
-    property.priceHistory = property.priceHistory.filter(record => 
-      record.timestamp >= dataRetentionTime
-    );
-    
-    // 额外保护：如果记录数量过多，只保留最新的记录
+    // 滑动窗口机制：固定保持60个数据点（10分钟，每10秒一个点）
     if (property.priceHistory.length > PROPERTY_TIME_CONFIG.MAX_PRICE_HISTORY_COUNT) {
+      // 删除最早的数据点，保持固定数量
       property.priceHistory = property.priceHistory.slice(-PROPERTY_TIME_CONFIG.MAX_PRICE_HISTORY_COUNT);
     }
   };
@@ -395,19 +391,20 @@ function sellProperty(propertyId) {
   const property = userProperties.find(p => p.id === propertyId);
   
   if (property) {
-    // 检查5分钟交易锁定期限
+    // 检查1分钟交易锁定期限
     const currentGameTime = gameTimeManager ? gameTimeManager.getGameTimestamp() : Date.now();
     const purchaseTime = property.purchaseTime || 0;
-    const fiveMinutesMs = 5 * 60 * 1000; // 5分钟的毫秒数
+    const oneMinuteMs = 1 * 60 * 1000; // 1分钟的毫秒数
     
-    if (currentGameTime - purchaseTime < fiveMinutesMs) {
+    if (currentGameTime - purchaseTime < oneMinuteMs) {
       // 还在交易锁定期内，不允许出售
-      const remainingTime = fiveMinutesMs - (currentGameTime - purchaseTime);
-      const remainingMinutes = Math.ceil(remainingTime / (60 * 1000));
+      const remainingTime = oneMinuteMs - (currentGameTime - purchaseTime);
+      const remainingSeconds = Math.ceil(remainingTime / 1000);
       return {
         success: false,
-        error: `交易锁定期内，还需等待 ${remainingMinutes} 分钟才能出售`,
-        remainingTime: remainingTime
+        error: `交易锁定期内，还需等待 ${remainingSeconds} 秒后可以出售`,
+        remainingTime: remainingTime,
+        remainingSeconds: remainingSeconds
       };
     }
     
@@ -461,16 +458,6 @@ function initializeRealEstate() {
   } else if (typeof global !== 'undefined') {
     global.getAllAvailableProperties = getAllAvailableProperties;
   }
-  
-  console.log('🔧 全局方法设置状态:', {
-    hasWindow: typeof window !== 'undefined',
-    hasGameGlobal: typeof GameGlobal !== 'undefined',
-    hasGlobal: typeof global !== 'undefined',
-    windowMethod: typeof window !== 'undefined' && !!window.getAllAvailableProperties,
-    gameGlobalMethod: typeof GameGlobal !== 'undefined' && !!GameGlobal.getAllAvailableProperties,
-    globalMethod: typeof global !== 'undefined' && !!global.getAllAvailableProperties,
-    poolSize: PROPERTY_INSTANCE_POOL.size
-  });
 
   // 生成交易大厅房产
   CURRENT_TRADING_PROPERTIES = generateTradingProperties();
